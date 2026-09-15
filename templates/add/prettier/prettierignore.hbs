@@ -1,0 +1,14 @@
+# Prettier 3 already reads .gitignore, so .svelte-kit/ and node_modules/ need no
+# line here. This file is only for tracked files that should keep their own
+# shape.
+
+# The prose in docs/ is wrapped by hand — reflowing it produces a diff on every
+# format with nothing in it. Prettier is here for code.
+*.md
+
+# Lockfiles are written by the package manager, in its own format.
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+bun.lock
+bun.lockb

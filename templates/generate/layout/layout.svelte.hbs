@@ -1,0 +1,21 @@
+<script lang="ts">
+	import type { Snippet } from "svelte";
+{{#if guard}}
+
+	import {{pascal}}Guard from "./{{name}}-guard.svelte";
+{{/if}}
+
+	// A layout is composition, not a page — anything with its own state or data
+	// belongs in a slice that gets rendered here.
+	let { children }: { children: Snippet } = $props();
+</script>
+
+<div class="flex min-h-svh flex-col">
+{{#if guard}}
+	<main class="flex-1 p-6">
+		<{{pascal}}Guard>{@render children()}</{{pascal}}Guard>
+	</main>
+{{else}}
+	<main class="flex-1 p-6">{@render children()}</main>
+{{/if}}
+</div>

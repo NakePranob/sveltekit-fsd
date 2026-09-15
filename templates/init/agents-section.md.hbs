@@ -1,0 +1,33 @@
+
+## Frontend architecture — Feature-Sliced Design
+
+`{{srcDir}}/` uses FSD v2.1 with the layers `app`, `pages`, `shared`
+(`features`/`entities` are added when a second consumer appears). Routing lives
+**inside** the app layer at `{{routesDir}}/`, because `kit.files.routes` points
+there. Read [docs/fsd.md](docs/fsd.md) before adding a file under `{{srcDir}}/`
+— it has the import boundary, the segment rules, and why a route file only ever
+renders.
+
+Rules that are easy to break without noticing:
+
+- imports point downwards only, and a slice is imported through its `index.ts`
+- `$lib/` and `{{alias}}/` are the same tree — `kit.files.lib` points `$lib` at `{{srcDir}}/`, so the boundary applies to both spellings
+- `{{routesDir}}/<route>/+page.svelte` renders an FSD page and nothing else; the title travels with the component in its own `<svelte:head>`
+- a module using runes must be named `*.svelte.ts`, and be imported without the `.ts` — rename it to a plain `.ts` and `$state` silently becomes an undefined function
+- `createQuery` / `createMutation` / `useQueryClient` are called during component initialisation, never from an event handler — they read Svelte context
+- `{{lintCommand}}` runs both linters: ESLint (`eslint.fsd.js`) flags a wrong-way or slice-internal import per file as you type, steiger (`steiger.config.ts`) flags the same imports plus what one file cannot show — a slice with no consumers, a layer sliced too finely
+- editing `eslint.fsd.js`: flat config replaces a rule's options when a later block matches the same file, so all of a layer's `no-restricted-imports` patterns must stay in that layer's one block
+
+Two agent skills sit in the repository root, both symlinked from `.claude/skills/`:
+
+- `.agents/skills/sveltekit-fsd/` — driving the generator in this repo
+- `.agents/skills/feature-sliced-design/` — the FSD methodology itself, for the
+  "should this be an entity at all" questions
+
+`docs/fsd.md` is the source of truth if any of them disagree.
+
+Scaffold with `sveltekit-fsd generate page|slice|layout` rather than by hand, so
+slices keep the same shape. Re-running one extends what exists (adds a segment, a
+guard, an error catalog) and never rewrites a file you already have.
+`shadcn-svelte add <name>` is already aimed at `{{srcDir}}/shared/ui` by
+`components.json`.

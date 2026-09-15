@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Fast and offline: tsc, the patcher unit tests, and the smoke test — which
+  # drives the real binary against a hand-built fixture and runs steiger over
+  # the result using this repo's own node_modules.
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is in the matrix because every path this CLI writes is built
+        # by hand: route files use posix joins, the routes directory is
+        # interpolated into ESLint globs and steiger `ignores`, and
+        # findRouteFor splits on path.sep. A glob with a backslash in it
+        # matches nothing, and the filesystem hides that — so the rule quietly
+        # stops applying rather than failing. None of it is exercised by
+        # developing on macOS. writeAgentSkill's symlink fallback is here too.
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+
+  # Slow and networked: a real `sv create`, a real install, and a real
+  # `svelte-check` / `eslint` / `vite build` over the generated tree. Catches
+  # what the smoke test structurally cannot — a dependency range that does not
+  # resolve, generated code that does not type-check against the real Svelte and
+  # TanStack Query, and a SvelteKit release that changes behaviour under us.
+  # One OS is enough; this is about the toolchain, not paths.
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:integration

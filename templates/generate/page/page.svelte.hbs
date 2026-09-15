@@ -1,0 +1,32 @@
+{{#if auth}}
+<script lang="ts">
+	import { requireSession } from "{{alias}}/shared/auth";
+
+	// UX only. The API's own auth middleware is the real gate and it runs on
+	// every request no matter what the browser rendered, so never treat a
+	// rendered page as proof of a session.
+	//
+	// One caller per shell: if this page routes under a layout that already
+	// guards its routes (`generate layout <name> --guard`), drop this and call
+	// `useSession()` instead — two components redirecting on the same failed
+	// session race each other.
+	const session = requireSession();
+</script>
+
+{{/if}}
+<svelte:head>
+	<title>{{title}}</title>
+</svelte:head>
+
+<div class="flex flex-col gap-6">
+	<h1 class="text-2xl font-semibold">{{title}}</h1>
+{{#if auth}}
+	{#if session.isPending || session.isError}
+		<p class="text-sm">{{copy.loading}}</p>
+	{:else}
+		<p class="text-sm">{{copy.todo}}</p>
+	{/if}
+{{else}}
+	<p class="text-sm">{{copy.todo}}</p>
+{{/if}}
+</div>

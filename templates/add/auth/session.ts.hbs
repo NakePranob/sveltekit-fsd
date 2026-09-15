@@ -1,0 +1,96 @@
+import { createMutation, createQuery, useQueryClient, type QueryClient } from "@tanstack/svelte-query";
+import { goto } from "$app/navigation";
+import { resolve } from "$app/paths";
+
+import { ApiError, api, sessionKey } from "{{alias}}/shared/api";
+
+import { setAccessToken } from "./access-token";
+
+/** GET /users/me. TODO: match the fields your API actually returns. */
+export type Session = {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+};
+
+export type LoginInput = { email: string; password: string };
+
+/** Body of login/refresh — the refresh token is an httpOnly cookie, not here. */
+type AuthTokens = { access_token: string; token_type: string; expires_in: number };
+
+// Defined next to the QueryClient that acts on it (a 401 anywhere drops this
+// entry), re-exported here because a session key reads as auth.
+export { sessionKey };
+
+/**
+ * The signed-in user, or an error when there is none.
+ *
+ * Call it from a component's `<script>`. Every hook in this file reads the
+ * QueryClient out of Svelte's context, and context is only readable during
+ * component initialisation — calling one from an event handler or a module top
+ * level throws, and the message does not say why.
+ *
+ * On a fresh page load there is no access token yet, so this 401s once and the
+ * client's response interceptor spends the refresh cookie before retrying —
+ * meaning this doubles as the session bootstrap. `retry: false` because that
+ * recovery already happened one layer down: a 401 that reaches here means the
+ * cookie is gone too, and asking again will not help.
+ *
+ * One minute of staleness, not five. This entry is what the app believes about
+ * who is signed in, so its staleTime is how long a session that ended elsewhere
+ * — another device, an account an admin closed, an expired refresh — can keep
+ * the shell looking normal when nothing else happens to ask. The API refuses
+ * every request in the meantime regardless; this is only about how long the
+ * screen lies about it. A minute costs one small request per window focus.
+ */
+export function useSession() {
+  return createQuery<Session, ApiError>(() => ({
+    queryKey: sessionKey,
+    queryFn: () => api.get<Session>("/users/me").then((response) => response.data),
+    retry: false,
+    staleTime: 60_000,
+  }));
+}
+
+export function useLogin() {
+  const queryClient = useQueryClient();
+  return createMutation<void, ApiError, LoginInput>(() => ({
+    mutationFn: async (input) => {
+      const { data } = await api.post<AuthTokens>("/auth/login", input);
+      setAccessToken(data.access_token);
+      // Refetch rather than write a session object we do not have: the response
+      // carries tokens only, so /users/me stays the single source of the user's
+      // name and role.
+      await queryClient.invalidateQueries({ queryKey: sessionKey });
+    },
+  }));
+}
+
+export function useLogout() {
+  const queryClient = useQueryClient();
+  return createMutation<void, ApiError, void>(() => ({
+    // Server-side too, not just locally: /auth/logout revokes the refresh token
+    // and clears the cookie, otherwise the next reload silently signs the user
+    // back in.
+    mutationFn: () => api.post("/auth/logout").then(() => undefined),
+    onSettled: () => endSession(queryClient),
+  }));
+}
+
+/**
+ * Ends the session on this device even when the server call failed — the user
+ * asked to leave. `clear()`, not `removeQueries(sessionKey)`: every other cached
+ * query holds the previous user's data.
+ *
+ * The redirect belongs here rather than in each button's `onSettled`: clearing
+ * the cache does not re-run an effect in a component that is not otherwise
+ * updating, so a sidebar or a route guard keeps the session it had already read,
+ * and nothing ever sees `isError` to redirect on. Every caller of this means
+ * "leave", so leaving is its job and no call site can forget the line.
+ */
+function endSession(queryClient: QueryClient): void {
+  setAccessToken(null);
+  queryClient.clear();
+  void goto(resolve("/login"));
+}

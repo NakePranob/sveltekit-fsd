@@ -1,0 +1,82 @@
+name: release
+
+on:
+  # Git is the release source of truth. A package can only be published from an
+  # explicitly pushed vX.Y.Z tag that points at the matching package.json.
+  push:
+    tags:
+      - "v*.*.*"
+  # Lets a failed publish be retried (a misconfigured trusted publisher, a
+  # registry outage) without inventing another commit or tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish, for example v0.1.0"
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm-release
+    permissions:
+      # contents: write to create the GitHub Release; id-token: write for the
+      # OIDC token npm Trusted Publishing and --provenance use.
+      contents: write
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          # Unshallow, because the release check reads tag objects and compares
+          # them against HEAD.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # registry-url is deliberately absent. It makes setup-node write an
+          # .npmrc holding the literal placeholder XXXXX-XXXXX-XXXXX-XXXXX, and
+          # npm then authenticates with that junk instead of exchanging the
+          # OIDC token, which the registry rejects as a 404.
+          # npm recommends publishing without a dependency cache.
+
+      - run: npm ci
+
+      - name: Check the tag against package.json
+        run: npm run release:check -- "$RELEASE_TAG"
+
+      # The same gate CI runs, re-run against the tagged tree rather than
+      # trusted from the branch: a tag can point anywhere, including at a
+      # commit CI never saw.
+      - run: npm run verify
+      - run: npm run test:integration
+
+      # Trusted Publishing exchanges the OIDC token for a short-lived
+      # registry credential, and that only exists in npm 11.5.1 and later.
+      # Node 22 still ships npm 10.x, which fails with ENEEDAUTH.
+      - run: npm install -g npm@latest && npm --version
+
+      - name: Publish from the verified tag
+        run: npm publish --provenance --access public
+
+      - name: Create the GitHub Release if it does not exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists"
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi

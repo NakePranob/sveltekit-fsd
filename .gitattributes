@@ -1,0 +1,7 @@
+# The templates in this repo are the output of a generator, so their line
+# endings are part of the product. Without this, git on Windows checks them out
+# as CRLF and the CLI emits CRLF there and LF everywhere else — two developers
+# on one project would then get diffs that are nothing but line endings.
+* text=auto eol=lf
+*.png binary
+*.svg text eol=lf

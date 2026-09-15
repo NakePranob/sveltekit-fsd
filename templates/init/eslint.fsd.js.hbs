@@ -1,0 +1,102 @@
+// The FSD import boundary, as ESLint sees it: one file at a time, in your
+// editor, on every save.
+//
+// Not a replacement for `steiger ./{{srcDir}}` and not redundant with it — the
+// two answer different questions at different moments. A single file can show
+// that this import points the wrong way; only a whole-tree pass can show that a
+// slice has no references at all, that a layer is sliced too finely, or that a
+// segment is named after its type instead of its purpose. ESLint catches the
+// mistake as you type it; steiger catches the shape the codebase drifted into.
+//
+// Zero new dependencies: `no-restricted-imports` is a core rule, and the layer
+// order is the whole of the boundary. Imports point downwards only —
+// app -> pages -> widgets -> features -> entities -> shared — and a slice is
+// always entered through its index.ts.
+
+// All six, even though `init` only creates app, pages and shared. A block whose
+// `files` glob matches no directory costs nothing and configures nothing — it is
+// not a nudge to go create widgets/features/entities. Those appear when a second
+// consumer forces them, and the rule is already here waiting when they do.
+const LAYERS = ["app", "pages", "widgets", "features", "entities", "shared"];
+
+// Layers divided into slices. `app` and `shared` hold segments instead, so they
+// have no sibling slices to keep apart and no index.ts to enter through.
+const SLICED = ["pages", "widgets", "features", "entities"];
+
+// One spelling, deliberately. `kit.files.lib` is left at its default, so `$lib`
+// still means {{srcDir}}/lib — SvelteKit's own directory, which is not a layer
+// and which `init` does not touch. The FSD tree is reached through `{{alias}}/`
+// and nothing else, so there is no second prefix for these patterns to cover.
+const forEachPrefix = (suffix) => [`{{alias}}/${suffix}`];
+
+/**
+ * Anything below a slice's own directory, from anywhere.
+ *
+ * One segment past the layer is the slice itself, which is exactly what another
+ * layer should import; two or more is its insides, which nothing should. That
+ * includes a file reaching into its OWN slice through the alias — inside a slice
+ * the import is relative, which is what keeps a slice movable.
+ */
+const insideSlice = {
+  group: SLICED.flatMap((layer) => forEachPrefix(`${layer}/*/**`)),
+  message: 'reaches inside a slice — import it through its index.ts, e.g. "{{alias}}/features/<slice>".',
+};
+
+/**
+ * One `no-restricted-imports` entry per group of files, never two.
+ *
+ * Flat config REPLACES a rule's options when a later block matches the same
+ * file; it does not merge them. So every pattern that applies to a layer has to
+ * live in that layer's single block — splitting them across blocks silently
+ * disables all but the last one to match, and the config still looks right.
+ */
+function boundaryFor(files, patterns) {
+  return {
+    files,
+    rules: { "no-restricted-imports": ["error", { patterns: [...patterns, insideSlice] }] },
+  };
+}
+
+const layerRules = LAYERS.map((layer) => {
+  const patterns = [];
+
+  const higher = LAYERS.slice(0, LAYERS.indexOf(layer));
+  if (higher.length > 0) {
+    patterns.push({
+      group: higher.flatMap((name) => forEachPrefix(`${name}/**`)),
+      message:
+        `imports point downwards only, and this is a higher layer than ${layer}. ` +
+        "Move the shared code down a layer instead of reaching up.",
+    });
+  }
+
+  if (SLICED.includes(layer)) {
+    patterns.push({
+      group: forEachPrefix(`${layer}/*`),
+      message:
+        "two slices on the same layer never import each other. Move the shared code down a layer, " +
+        "or use a relative path if it really belongs to this slice.",
+    });
+  }
+
+  return boundaryFor([`{{srcDir}}/${layer}/**/*.{ts,js,svelte}`], patterns);
+});
+
+const fsdBoundary = [
+  ...layerRules,
+  // {{routesDir}}/ is routing, and it sits inside the app layer — so this block
+  // has to come after the app block above, and has to repeat every pattern that
+  // still applies. A route file renders a page; composing features straight into
+  // it is how the routing layer starts growing logic that belongs in a slice.
+  boundaryFor(
+    [`{{routesDir}}/**/*.{ts,js,svelte}`],
+    [
+      {
+        group: ["widgets", "features", "entities"].flatMap((layer) => forEachPrefix(`${layer}/**`)),
+        message: "{{routesDir}}/ renders pages, not features — put it in a pages slice and render that.",
+      },
+    ]
+  ),
+];
+
+export default fsdBoundary;

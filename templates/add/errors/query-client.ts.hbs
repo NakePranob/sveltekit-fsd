@@ -1,0 +1,73 @@
+import { MutationCache, QueryCache, QueryClient } from "@tanstack/svelte-query";
+
+import { ApiError } from "./api-error";
+
+/**
+ * The cache entry that holds the signed-in user.
+ *
+ * It lives here rather than in shared/auth because this file is written first —
+ * error handling installs with or without auth — and because the QueryClient is
+ * what acts on it. `add auth` imports it back in session.ts.
+ */
+export const sessionKey = ["session"] as const;
+
+/**
+ * One QueryClient per request (see app/providers) — created through a function,
+ * not as a module constant, so SvelteKit's server render never shares cache
+ * between two users. A module-level client on the server is one object for the
+ * lifetime of the process, which is to say one user's data handed to the next.
+ */
+export function makeQueryClient(): QueryClient {
+  /**
+   * A 401 that reaches here already survived the client's silent refresh (see
+   * client.ts), so the refresh cookie is gone too — revoked from another device,
+   * expired, or logged out everywhere. The session is over no matter which
+   * request happened to find out.
+   *
+   * Resetting the cached session makes useSession refetch, 401 again, and
+   * requireSession redirect. Without it the session query sits fresh for its
+   * whole staleTime while every other request 401s: a page that looks signed in
+   * and does nothing, until a window focus eventually refetches it.
+   *
+   * resetQueries, not removeQueries, and the difference is the whole bug:
+   * removing an entry does not notify the observers mounted on it, so a
+   * component that was not re-rendering for its own reasons — a sidebar, a route
+   * guard — goes on rendering the session it had already read. The page draws a
+   * 401 inline under chrome that still shows the user's name, and nothing ever
+   * sees isError to redirect on. A reset notifies, refetches, and lands in
+   * error.
+   */
+  const endSessionOn401 = (error: unknown) => {
+    if (error instanceof ApiError && error.status === 401) {
+      void client.resetQueries({ queryKey: sessionKey });
+    }
+  };
+
+  const client: QueryClient = new QueryClient({
+    queryCache: new QueryCache({
+      onError: (error, query) => {
+        // The session query's own 401 already ends the session — resetting the
+        // query it is currently failing on would refetch, 401, and loop.
+        if (query.queryKey[0] === sessionKey[0]) return;
+        endSessionOn401(error);
+      },
+    }),
+    // Same rule for writes. A session usually dies while someone is reading, but
+    // the one that matters is the save that comes back 401 — leaving them
+    // staring at a form that will never submit is the worst version of this.
+    mutationCache: new MutationCache({ onError: (error) => endSessionOn401(error) }),
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        // A 4xx is an answer, not a hiccup: retrying a 401/403/404 just delays
+        // the error the UI already has to handle. 5xx and network failures
+        // (status 0) are worth one more shot.
+        retry: (failureCount, error) => {
+          const retriable = !(error instanceof ApiError) || error.status === 0 || error.status >= 500;
+          return retriable && failureCount < 2;
+        },
+      },
+    },
+  });
+  return client;
+}

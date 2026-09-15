@@ -1,0 +1,15 @@
+<script lang="ts">
+	import LoginForm from "./login-form.svelte";
+</script>
+
+<svelte:head>
+	<title>{{copy.signIn}}</title>
+</svelte:head>
+
+<main class="mx-auto flex min-h-svh w-full max-w-sm flex-col justify-center gap-6 p-6">
+	<div class="flex flex-col gap-1">
+		<h1 class="text-2xl font-semibold">{{copy.signIn}}</h1>
+		<p class="text-sm opacity-70">{{copy.signInSubtitle}}</p>
+	</div>
+	<LoginForm />
+</main>

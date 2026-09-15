@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+/* This file lives in the FSD app layer rather than beside the routes, so name
+   the tree Tailwind scans for class names instead of relying on where automatic
+   detection decides the project root is. */
+@source "{{cssSource}}";
+
+/* Theme tokens are project-wide configuration, which is what puts this file in
+   the app layer rather than next to a route. */
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+  }
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+}

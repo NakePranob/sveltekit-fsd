@@ -1,0 +1,25 @@
+/**
+ * State this slice owns and that never leaves the browser. Anything that comes
+ * from the API belongs in api/ as a TanStack Query hook instead.
+ *
+ * The filename ends in `.svelte.ts` because `$state` is a rune: the Svelte
+ * compiler only processes runes in `.svelte` components and in modules named
+ * this way. Renaming it to a plain `.ts` turns `$state` into an undefined
+ * function at runtime, which is why the import that reaches it is written
+ * `"./model/{{name}}.svelte"` rather than `"./model/{{name}}"`.
+ *
+ * A getter, not the variable: exporting `value` directly would export a
+ * snapshot taken once at module load, and nothing would ever update.
+ */
+export function use{{pascal}}() {
+  let value = $state<string | null>(null);
+
+  return {
+    get value() {
+      return value;
+    },
+    set(next: string | null) {
+      value = next;
+    },
+  };
+}

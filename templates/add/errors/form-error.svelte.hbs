@@ -1,0 +1,46 @@
+<script lang="ts">
+	import { ApiError, commonErrorCatalog, resolveApiError, type ErrorCatalog } from "{{alias}}/shared/api";
+
+	/**
+	 * Renders a failed API call: one sentence resolved from the caller's
+	 * catalogs, plus per-field details when the API sent them (usually dev only,
+	 * which is why those stay untranslated).
+	 *
+	 * This component owns no copy of its own. The domain that raises a code owns
+	 * the sentence for it — `authErrorCatalogs` from `{{alias}}/shared/auth`, or
+	 * a `pages/<page>/model/<page>-errors.ts` — so adding a feature never means
+	 * editing a component in shared/ui.
+	 */
+	let {
+		error,
+		// Searched in order, so a screen that reads one code differently from the
+		// rest of its domain puts its own map first.
+		catalogs = [commonErrorCatalog],
+		fallback = "{{copy.genericError}}",
+		class: className = "",
+	}: {
+		error: unknown;
+		catalogs?: readonly ErrorCatalog[];
+		fallback?: string;
+		class?: string;
+	} = $props();
+
+	const fields = $derived(error instanceof ApiError ? error.fieldErrors : undefined);
+	const message = $derived(resolveApiError(error, { catalogs, fallback }));
+</script>
+
+{#if error}
+	<div
+		role="alert"
+		class="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400 {className}"
+	>
+		<p>{message}</p>
+		{#if fields}
+			<ul class="mt-1 list-inside list-disc">
+				{#each Object.entries(fields) as [field, rule] (field)}
+					<li>{field}: {rule}</li>
+				{/each}
+			</ul>
+		{/if}
+	</div>
+{/if}

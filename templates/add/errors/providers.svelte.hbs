@@ -1,0 +1,17 @@
+<script lang="ts">
+	import { QueryClientProvider } from "@tanstack/svelte-query";
+	import type { Snippet } from "svelte";
+
+	import { makeQueryClient } from "{{alias}}/shared/api";
+
+	let { children }: { children: Snippet } = $props();
+
+	// Created here, inside the component, rather than as a module constant: this
+	// file is evaluated once per server process but this component runs once per
+	// request, and a shared client would hand one user's cached data to the next.
+	const queryClient = makeQueryClient();
+</script>
+
+<QueryClientProvider client={queryClient}>
+	{@render children()}
+</QueryClientProvider>

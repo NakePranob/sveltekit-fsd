@@ -1,0 +1,41 @@
+import fsd from "@feature-sliced/steiger-plugin";
+import { defineConfig } from "steiger";
+
+export default defineConfig([
+  ...fsd.configs.recommended,
+  {
+    // SvelteKit's own files, which are not FSD and have names SvelteKit chose.
+    // `{{routesDir}}/` is the biggest of them: it is a segment of the app layer
+    // whose every file is named `+page.svelte`, and steiger would read that tree
+    // as slices. The import boundary there is still enforced — by ESLint, per
+    // file, which is the half that can see an import at all.
+    ignores: [
+      "./{{routesDir}}/**",
+      "./{{srcDir}}/app.d.ts",
+      "./{{srcDir}}/hooks.*.ts",
+      "./{{srcDir}}/params/**",
+      "./{{srcDir}}/service-worker.ts",
+      // SvelteKit's own $lib. `init` leaves it alone rather than moving anybody's
+      // code, and it is not an FSD layer — shared/ is. Do not grow it: two homes
+      // for shared code is the drift the layers exist to prevent.
+      "./{{srcDir}}/lib/**",
+    ],
+  },
+  {
+    // FSD's own docs name this segment `providers` — it is the app layer's
+    // context wiring, which is a purpose, not a type. The rule reads it as the
+    // latter.
+    files: ["./{{srcDir}}/app/providers/**"],
+    rules: { "fsd/segments-by-purpose": "off" },
+  },
+  {
+    // A warning, not an error, because at default severity this fails `lint` on
+    // the structure FSD's own guidance calls the normal starting point: a slice
+    // extracted for its first consumer, before the second one exists. The
+    // message is still worth reading — a slice that stays at one consumer for
+    // good probably belongs inside it — but a fresh slice failing CI teaches
+    // people to delete the linter rather than the slice.
+    files: ["./{{srcDir}}/**"],
+    rules: { "fsd/insignificant-slice": "warn" },
+  },
+]);

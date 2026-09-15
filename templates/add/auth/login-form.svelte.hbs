@@ -1,0 +1,59 @@
+<script lang="ts">
+	import { goto } from "$app/navigation";
+	import { page } from "$app/state";
+
+	import { authErrorCatalogs, safeNext, useLogin, useSession } from "{{alias}}/shared/auth";
+	import { FormError } from "{{alias}}/shared/ui";
+
+	const field = "rounded-md border border-black/15 px-3 py-2 text-sm dark:border-white/20";
+
+	const login = useLogin();
+	const session = useSession();
+
+	// requireSession sends people here with ?next=, so pick that back up rather
+	// than always landing on the home page. safeNext is what keeps it same-site.
+	const signedIn = () => goto(safeNext(page.url.searchParams.get("next")), { replaceState: true });
+
+	// Already signed in: someone typed /login, followed an old link, or came back
+	// to a tab that still had it open. Same destination as a fresh sign-in, so a
+	// ?next= they arrived with is still honoured.
+	//
+	// The form is drawn while the session is still loading rather than held
+	// behind a spinner — anonymous is the common case on this page, and it is the
+	// one that would pay for the wait.
+	$effect(() => {
+		if (session.isSuccess) void signedIn();
+	});
+
+	function onsubmit(event: SubmitEvent) {
+		event.preventDefault();
+		const form = new FormData(event.currentTarget as HTMLFormElement);
+		login.mutate(
+			{ email: String(form.get("email") ?? ""), password: String(form.get("password") ?? "") },
+			{ onSuccess: () => void signedIn() }
+		);
+	}
+</script>
+
+<!-- Native HTML validation only: `required`/`type="email"` catch the obvious
+     mistakes before a round trip, and the API re-validates every field anyway.
+     Swap in a schema library once a form here has rules the browser cannot
+     express. -->
+<form {onsubmit} class="flex flex-col gap-4">
+	<FormError error={login.error} catalogs={authErrorCatalogs} fallback="{{copy.signInFailed}}" />
+	<label class="flex flex-col gap-1.5 text-sm">
+		{{copy.email}}
+		<input name="email" type="email" required autocomplete="email" class={field} />
+	</label>
+	<label class="flex flex-col gap-1.5 text-sm">
+		{{copy.password}}
+		<input name="password" type="password" required autocomplete="current-password" class={field} />
+	</label>
+	<button
+		type="submit"
+		disabled={login.isPending}
+		class="bg-foreground text-background mt-2 rounded-md px-3 py-2 text-sm disabled:opacity-60"
+	>
+		{login.isPending ? "{{copy.signingIn}}" : "{{copy.signIn}}"}
+	</button>
+</form>

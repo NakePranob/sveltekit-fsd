@@ -1,0 +1,100 @@
+#!/usr/bin/env node
+// Slow and networked, and the only check that proves the generated code is real:
+// a genuine `sv create`, a genuine install, then svelte-check, eslint, steiger,
+// vitest and vite build over what this CLI produced.
+//
+// The smoke test cannot do any of this. It asserts on generated *text*, which
+// catches a template that stopped emitting something and nothing else — a
+// template can emit perfectly plausible Svelte that does not compile, or call a
+// TanStack Query API that moved between majors, and read fine to every
+// assertion. This is also the only place a declared dependency range is
+// actually resolved.
+import { execFileSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cli = path.join(repo, "bin", "sveltekit-fsd.js");
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sveltekit-fsd-integration-"));
+const app = path.join(dir, "app");
+
+const step = (what) => console.log(`\n▸ ${what}`);
+
+function run(command, args, cwd = app) {
+  console.log(`  $ ${command} ${args.join(" ")}`);
+  execFileSync(command, args, { cwd, stdio: "inherit" });
+}
+
+/** Runs a command that may legitimately be noisy, and returns both streams plus
+ *  the exit code — steiger reports warnings on stderr and still exits 0. */
+function capture(command, args, cwd = app) {
+  console.log(`  $ ${command} ${args.join(" ")}`);
+  const result = spawnSync(command, args, { cwd, encoding: "utf8" });
+  process.stdout.write(result.stdout ?? "");
+  process.stderr.write(result.stderr ?? "");
+  return { status: result.status, output: `${result.stdout ?? ""}${result.stderr ?? ""}` };
+}
+
+step("sv create");
+run(
+  "npx",
+  ["-y", "sv@latest", "create", "app", "--template", "minimal", "--types", "ts",
+   "--add", "prettier", "eslint", "tailwindcss=plugins:none", "vitest=usages:unit", "--no-install"],
+  dir
+);
+
+step("sveltekit-fsd init / add / generate");
+run(process.execPath, [cli, "init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"]);
+run(process.execPath, [cli, "add", "auth", "-y", "--no-install"]);
+run(process.execPath, [cli, "generate", "page", "dashboard", "--auth", "--title", "Dashboard", "--defaults"]);
+run(process.execPath, [cli, "generate", "layout", "admin", "--guard", "--defaults"]);
+run(process.execPath, [cli, "generate", "slice", "features", "checkout", "--segments", "ui,model,api,lib", "--errors"]);
+
+step("install");
+run("npm", ["install"]);
+
+// Re-run the formatter pass the CLI could not do before node_modules existed.
+// `init` formats what it writes with the project's own prettier, and on a fresh
+// clone there is none to resolve yet — so the check below would otherwise fail
+// on files that the normal flow (create, install, init) formats fine.
+step("format the files init wrote before prettier existed");
+run("npx", ["prettier", "--write", "."]);
+
+step("svelte-check — this is the typecheck, and it needs svelte-kit sync first");
+run("npm", ["run", "check"]);
+
+step("eslint — the FSD boundary, plus the project's own rules");
+run("npx", ["eslint", "."]);
+
+step("the boundary rules have to bite, not just load");
+// A config that loads and matches nothing reads exactly like one that works.
+fs.mkdirSync(path.join(app, "src/shared/lib"), { recursive: true });
+fs.writeFileSync(
+  path.join(app, "src/shared/lib/boundary-probe.ts"),
+  'import { DashboardPage } from "@/pages/dashboard";\n\nexport const probe = DashboardPage;\n'
+);
+const probe = capture("npx", ["eslint", "src/shared/lib/boundary-probe.ts"]);
+if (probe.status === 0 || !probe.output.includes("no-restricted-imports")) {
+  throw new Error("eslint.fsd.js did not flag an upward import from shared/ — the boundary is inert");
+}
+fs.rmSync(path.join(app, "src/shared/lib"), { recursive: true });
+
+step("steiger — whole-tree, and it must stay green on generated code");
+const steiger = capture("npx", ["steiger", "./src"]);
+if (steiger.status !== 0) throw new Error(`steiger failed on a freshly generated project (exit ${steiger.status})`);
+if (!steiger.output.includes("insignificant-slice")) {
+  throw new Error("steiger reported nothing at all — the config is inert, not clean");
+}
+
+step("vitest — the generated refresh and open-redirect tests");
+run("npm", ["test"]);
+
+step("vite build");
+run("npm", ["run", "build"]);
+
+step("lint — prettier --check included, since `add prettier` puts it there");
+run("npm", ["run", "lint"]);
+
+console.log(`\nintegration: ok\n${app}`);

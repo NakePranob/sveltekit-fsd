@@ -1,0 +1,201 @@
+---
+name: sveltekit-fsd
+description: >
+  Use whenever the user asks to add, create, scaffold, or wire up a new page,
+  screen, route, feature, entity, layout, or shared route shell in THIS project
+  — including indirect requests such as "add a settings screen", "let staff
+  approve loans", "put the dashboard behind login", or "show a proper message
+  when the API fails". This project is a SvelteKit app organized with
+  Feature-Sliced Design and has a sveltekit-fsd.config.json at its root; check
+  for that file before assuming this applies. Also use when adding API error
+  handling or authentication for the first time. Do NOT use for business logic
+  or markup inside a file the CLI already generated, for styling, for a bug fix
+  or refactor, or for a project without sveltekit-fsd.config.json.
+---
+
+# sveltekit-fsd
+
+Use this skill for the FSD surface only: which directory a new thing goes in, and
+how it is imported. Once a slice exists, its content — markup, business rules,
+request shapes — is the engineer's work.
+
+Create slices with the CLI rather than by hand, so the route file, the `index.ts`
+public API, the `.svelte.ts` naming for runes and the segment layout stay
+consistent. Hand-written slices are exactly what the two linters then report.
+
+This file is emitted at `.agents/skills/sveltekit-fsd/SKILL.md` in the repository
+root, symlinked from `.claude/skills/sveltekit-fsd`. Agents that load neither
+should follow `AGENTS.md`, which points at [docs/fsd.md]({{docsFromSkill}}) — the
+fuller convention, and the source of truth if this file and it ever disagree.
+
+**FSD methodology questions are not this skill's job.** Whether a thing should be
+an entity at all, when to extract from a page, cross-import and `@x` patterns,
+how strict to be — that is the `feature-sliced-design` skill, which `init` wrote
+next to this one. This one only covers driving the generator in this repo.
+
+## When to use this skill
+
+- A new page, screen or route is requested, even without the word "page".
+- A new reusable feature or business object is requested, even without the words
+  "feature" or "entity".
+- Several routes need shared chrome (a sidebar, an auth card) → a layout.
+- The project needs API error handling or auth for the first time.
+- An existing slice needs a segment it does not have yet (state, requests,
+  helpers, an error catalog).
+
+Examples that all use this skill:
+
+- "add a settings screen" → `generate page settings`
+- "the dashboard should require login" → `generate page dashboard --auth`
+- "admin pages need a shared sidebar" → `generate layout admin`
+- "loans need to be reusable across screens" → `generate slice entities loan`
+- "show a real message when saving fails" → `add error-handling`, then `--errors`
+  on the slice that owns the failing call
+
+## When not to use it
+
+- Writing the actual markup, state, or request body inside a generated file
+- Styling, Tailwind theme edits, or shadcn-svelte component customisation
+- `load` functions, form actions, hooks — those are SvelteKit's files, not FSD's
+- Bug fixes, refactors, or dependency work
+- Deciding whether a layer *should* exist — that is the FSD skill
+- Any repository without sveltekit-fsd.config.json at its root
+
+## Before running the CLI
+
+1. Read `sveltekit-fsd.config.json`. `features.errorHandling` and `features.auth`
+   decide which flags are even legal, `routesDir` says where route files go, and
+   `locale` says which language generated copy is written in.
+2. Look for the slice first. `{{srcDir}}/pages/`, `{{srcDir}}/features/`,
+   `{{srcDir}}/entities/` — a name that already exists means you are extending,
+   not creating, and the flags differ.
+3. Check `{{routesDir}}/` for an existing route before choosing `--route`. A page
+   routed from a group is not where the default would look.
+4. Confirm the work is on a branch you may commit to (`git status -sb`) and
+   preserve unrelated changes.
+
+## Commands
+
+Run from the project root. **Pass every value as a flag** — an omitted value
+opens a prompt, and in a non-interactive shell that exits 1 without writing
+anything.
+
+~~~bash
+sveltekit-fsd generate page <name> [--route <path>] [--no-route] [--auth] [--model] [--errors] [--defaults]
+sveltekit-fsd generate slice <features|entities|widgets> <name> [--segments ui,model,api,lib] [--errors] [--defaults]
+sveltekit-fsd generate layout <name> [--route <path>] [--no-route] [--guard] [--defaults]
+sveltekit-fsd add error-handling [-y] [--no-install]
+sveltekit-fsd add auth [-y] [--no-install]
+sveltekit-fsd add prettier [-y] [--no-install]
+sveltekit-fsd config show
+~~~
+
+`--defaults` answers every remaining question, so scripted and agent use needs
+`--defaults` (or the full set of flags) on every generate command.
+
+Feature gates, which fail loudly rather than generating something broken:
+
+- `--auth` and `--guard` require `features.auth` → run `add auth` first
+- `--errors`, `--model` and the `api` segment require `features.errorHandling` →
+  run `add error-handling` first
+- `add auth` installs error handling itself if it is missing; do not run both
+- `add prettier` formats the whole project once, on purpose — it puts
+  `prettier --check .` on the lint script, and adding the check without the pass
+  leaves `{{lintCommand}}` failing on every file. Commit that pass by itself.
+  Once it is installed, generated files come out formatted; do not reformat them
+  by hand
+
+## Extending, not rewriting
+
+**Re-run the same command to add to something that exists.** Do not hand-write
+the file, and do not delete the slice to regenerate it.
+
+~~~bash
+sveltekit-fsd generate slice features checkout --segments ui           # ui/ only
+sveltekit-fsd generate slice features checkout --segments ui,model     # adds model/
+sveltekit-fsd generate page dashboard --errors --defaults              # adds the catalog
+~~~
+
+Only the missing files are written; new exports are appended to the slice's
+`index.ts`; every existing file is left exactly as it is. If there is nothing to
+add, the command says so and writes nothing — that is the expected answer, not a
+failure to work around.
+
+Two consequences worth knowing:
+
+- The page component is an existing file, so a guard or a model added later is
+  not wired to anything yet. The command prints the line to add; add it.
+- A page already routed from elsewhere does not get a second route file.
+
+## Contracts the generated code relies on
+
+Breaking one of these is silent — the build passes and the app is wrong.
+
+- **A module that uses runes is named `*.svelte.ts`, and imported without the
+  `.ts`.** `$state` in a plain `.ts` is not a compile error, it is an undefined
+  function at runtime. `import { useThing } from "./model/thing.svelte"`.
+- **`createQuery` / `createMutation` / `useQueryClient` are called during
+  component initialisation.** They read Svelte context; calling one from an event
+  handler throws, and the message does not explain why.
+- **Their options are a function, not an object** — `createQuery(() => ({...}))`.
+  That is what keeps a key built from `$state` reactive. An object literal
+  freezes the options at first render.
+- **A route file renders a page and nothing else.** The title lives in the page
+  component's own `<svelte:head>`; there is nothing to re-export.
+- **Imports point downwards, and a slice is entered through its `index.ts`.**
+  `{{alias}}/features/x`, never `{{alias}}/features/x/ui/x.svelte`. Inside a
+  slice the import is relative. `$lib/` is the same tree as `{{alias}}/`, so it
+  is the same rule.
+- **Never render `error.message` as UI copy.** Add the code to the domain's own
+  catalog (`model/<name>-errors.ts`) and let the fallback name the action that
+  failed. A backend message is written for a log.
+- **One catalog per domain, never one global map.** `generate ... --errors`
+  creates it in the right place.
+- **A failure the user must fix stays inline, one they only need to know goes to
+  a toast.** `<FormError>` is the inline half; a toast helper takes a finished
+  sentence, and resolving a code stays with the domain that raises it.
+- **A second consumer that shares *data* usually means `shared/<domain>/`, not a
+  new `entities/` slice.** Read docs/fsd.md before creating a layer.{{#if (eq locale "th")}}
+- **Thai copy: no negative tracking, nothing Thai inside `font-mono`, and line
+  heights loosened per text size.** Tone marks stack above and below, and a mono
+  face loaded with the latin subset has no Thai glyph to render.{{/if}}
+- **A catalog is a plain object, so i18n needs no second shape.** In a project
+  with a translator, build it where it is rendered —
+  `catalogs={[{ CONFLICT: t("conflict") }]}` — and keep the codes as the keys;
+  they are the API's contract, not copy. The CLI's `locale` only decides what the
+  first draft reads like.
+- **The access token stays in the module variable** in
+  `{{srcDir}}/shared/auth/access-token.ts`. Never move it to `localStorage`, and
+  never remove the single-flight guard in `shared/api/client.ts` — a backend that
+  rotates refresh tokens logs the user out mid-session without it.
+- **The QueryClient is created inside the provider component, not at module
+  level.** On the server that module is evaluated once per process; a shared
+  client hands one user's cached data to the next.
+- **`{{routesDir}}/` renders pages, not features.** ESLint enforces this one.
+
+## Verification
+
+After generating and filling in a slice:
+
+~~~bash
+{{lintCommand}}      # eslint (per-file boundary) + steiger (whole-tree)
+{{packageManager}} run check      # svelte-check — this is the typecheck
+{{packageManager}} run build
+~~~
+
+`svelte-check`, not `tsc`: a `.svelte` file's types only exist once the compiler
+has looked at it, and `svelte-kit sync` has to have run for `{{alias}}/` to
+resolve at all — which `check` does for you.
+
+Both linters report a wrong-way or slice-internal import — ESLint at the file as
+you type it, steiger over the whole tree. steiger also reports what no single
+file can show: `fsd/insignificant-slice` on a brand-new slice means nothing
+imports it yet — either wire it up or inline it back into its single consumer; it
+is the linter working, not a false positive.
+
+Where the CLI wrote a `client.test.ts`, run the project's test command too. Do not
+delete that test to make a change pass: the single-flight 401 refresh and the
+no-refresh-on-`/auth/*` rule are the two things in this codebase that fail
+silently in a browser.
+
+Report the exact output, and say plainly which generated TODOs are still TODOs.

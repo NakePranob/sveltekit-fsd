@@ -1,0 +1,11 @@
+{{#if segments.model}}
+<script lang="ts">
+	import { use{{pascal}} } from "../model/{{name}}.svelte";
+
+	const {{camel}} = use{{pascal}}();
+</script>
+
+<p class="text-sm">{JSON.stringify({{camel}}.value)}</p>
+{{else}}
+<p class="text-sm">{{copy.todo}}</p>
+{{/if}}
