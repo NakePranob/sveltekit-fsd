@@ -138,6 +138,10 @@ check(
 const steigerConfig = read(full, "steiger.config.ts");
 check(steigerConfig.includes("./src/lib/**"), "steiger ignores SvelteKit's own $lib");
 check(steigerConfig.includes("./src/app/routes/**"), "steiger ignores the routing tree");
+check(
+  JSON.parse(read(full, "package.json")).scripts.lint.includes("svelte-kit sync && steiger"),
+  "lint syncs SvelteKit before steiger — .svelte-kit is gitignored, and steiger dies rather than degrades without it"
+);
 
 // --- what add and generate are responsible for ------------------------------
 check(exists(full, "src/shared/api/client.ts"), "the api client is written");
@@ -189,7 +193,12 @@ check(read(full, "AGENTS.md").includes("Feature-Sliced Design"), "AGENTS.md gain
 for (const file of generatedFiles(full)) {
   const contents = fs.readFileSync(file, "utf8");
   const relative = path.relative(full, file);
-  if (relative.startsWith(".agents/") || relative.startsWith(".claude/")) continue; // verbatim copies
+  // Only the methodology skill is exempt — it is copied byte-for-byte, Vue
+  // examples and all. `.agents/skills/sveltekit-fsd/SKILL.md` IS rendered, and
+  // skipping the whole `.agents/` tree would have exempted the one generated
+  // file most likely to carry an unrendered expression.
+  if (relative.includes("skills/feature-sliced-design/")) continue;
+  if (relative.startsWith(".claude/")) continue; // the symlinked copy of both
   check(!contents.includes("{{"), `no unrendered Handlebars in ${relative}`);
   check(!contents.includes("\r\n"), `no CRLF in ${relative}`);
 }
@@ -235,6 +244,30 @@ check(steiger.status === 0, `steiger exits 0 on a freshly generated project (got
 // so a check that only read stdout would pass against a linter saying nothing.
 check(/insignificant-slice/.test(steiger.output), "steiger is live — it reports the unreferenced slice");
 check(!/✘|error/i.test(steiger.output), "and reports no errors, so `lint` stays green after a generate");
+
+// --- a half-installed project still has to lint clean -----------------------
+// `add error-handling` writes shared/auth/access-token.ts, and `add auth` may
+// not be run for months. A segment with one file and no index.ts is an error to
+// steiger, so an add that reported success would leave `lint` red.
+console.log("smoke: error handling without auth");
+const half = makeFixture("half");
+run(half, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"]);
+run(half, ["add", "error-handling", "-y", "--no-install"]);
+check(exists(half, "src/shared/auth/index.ts"), "shared/auth gets a public API from the add that creates it");
+const halfSteiger = spawn(half, ["node_modules/.bin/steiger", "./src"]);
+check(halfSteiger.status === 0, `steiger exits 0 with error handling and no auth (got ${halfSteiger.status})`);
+check(!/✘/.test(halfSteiger.output), `steiger reports no errors on a half-installed project:\n${halfSteiger.output}`);
+
+// And `add auth` has to extend that file rather than overwrite it — the two
+// commands can be months apart, long enough for the project to have added its
+// own exports.
+fs.appendFileSync(path.join(half, "src/shared/auth/index.ts"), 'export const PROJECT_OWNED = true;\n');
+run(half, ["add", "auth", "-y", "--no-install"]);
+const authIndex = read(half, "src/shared/auth/index.ts");
+check(authIndex.includes("PROJECT_OWNED"), "add auth keeps what the project put in shared/auth/index.ts");
+check(authIndex.includes("./access-token") && authIndex.includes("./session") && authIndex.includes("./require-session"),
+  "and every export is there afterwards");
+check(authIndex.match(/from "\.\/access-token"/g).length === 1, "without duplicating the line it already had");
 
 console.log("smoke: minimal project (no eslint, no tailwind, no vitest)");
 const min = makeFixture("min", { eslint: false, tailwind: false });

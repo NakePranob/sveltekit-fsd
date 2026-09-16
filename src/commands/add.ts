@@ -136,6 +136,23 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
   ) {
     written.push(`${config.srcDir}/shared/ui/index.ts`);
   }
+  // shared/auth gets a public API here rather than waiting for `add auth`, which
+  // may never be run: a segment holding one file and no index.ts is an error to
+  // steiger, so an add that installed cleanly would otherwise leave `lint` red.
+  //
+  // Appended, not rendered: this is the one place error handling reaches into a
+  // directory another command owns, and a project that already has a
+  // shared/auth/index.ts of its own should keep it rather than have the whole
+  // batch refuse over it.
+  if (
+    appendExport(
+      projectDir,
+      `${config.srcDir}/shared/auth/index.ts`,
+      'export { getAccessToken, setAccessToken } from "./access-token";'
+    )
+  ) {
+    written.push(`${config.srcDir}/shared/auth/index.ts`);
+  }
   if (
     appendEnvExample(
       projectDir,
@@ -156,7 +173,11 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
 
   // The two files above were edited as text, not rendered from a template, so
   // applyTemplates never saw them. Missing ones are skipped.
-  await formatFiles(projectDir, [layoutFile, `${config.srcDir}/shared/ui/index.ts`]);
+  await formatFiles(projectDir, [
+    layoutFile,
+    `${config.srcDir}/shared/ui/index.ts`,
+    `${config.srcDir}/shared/auth/index.ts`,
+  ]);
 
   const added = addDependencies(projectDir, API_DEPS);
   setFeature(projectDir, "errorHandling", true);
@@ -244,7 +265,6 @@ export async function addAuth(opts: AddOptions): Promise<void> {
         when: () => runner !== undefined,
       },
       { template: "add/auth/auth-errors.ts.hbs", output: `${auth}/auth-errors.ts` },
-      { template: "add/auth/index.ts.hbs", output: `${auth}/index.ts` },
       { template: "add/auth/login-index.ts.hbs", output: `${slice}/index.ts` },
       { template: "add/auth/login-page.svelte.hbs", output: `${slice}/ui/login-page.svelte` },
       { template: "add/auth/login-form.svelte.hbs", output: `${slice}/ui/login-form.svelte` },
@@ -255,6 +275,23 @@ export async function addAuth(opts: AddOptions): Promise<void> {
     ],
     context
   );
+
+  // Appended, not rendered over the top: `add error-handling` already wrote this
+  // file, and the two commands can be months apart — long enough for the project
+  // to have put its own exports in it. appendExport skips a line already there,
+  // so re-running adds nothing twice.
+  for (const line of [
+    'export { authErrorCatalog, authErrorCatalogs, resolveAuthError } from "./auth-errors";',
+    'export { sessionKey, useLogin, useLogout, useSession, type LoginInput, type Session } from "./session";',
+    'export { requireSession, safeNext } from "./require-session";',
+  ]) {
+    if (appendExport(projectDir, `${auth}/index.ts`, line) && !written.includes(`${auth}/index.ts`)) {
+      written.push(`${auth}/index.ts`);
+    }
+  }
+  // Appended as text, so applyTemplates never formatted it — and `add prettier`
+  // puts a --check on lint.
+  await formatFiles(projectDir, [`${auth}/index.ts`]);
 
   setFeature(projectDir, "auth", true);
   report(written);

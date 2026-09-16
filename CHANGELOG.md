@@ -31,6 +31,19 @@ SvelteKit 2.
   `feature-sliced-design` skill, including a SvelteKit section written against
   the layout this CLI produces.
 
+### Fixed before release
+
+- `add error-handling` leaves `shared/auth/` with a public API. It writes
+  `access-token.ts` there, and `add auth` may not run for months — a segment
+  holding one file and no `index.ts` is a steiger **error**, so the add reported
+  success and left `lint` red. The export is appended rather than rendered, so a
+  project that already has its own `shared/auth/index.ts` keeps it.
+- The generated `lint` script runs `svelte-kit sync` before steiger. steiger
+  resolves the `@/` alias through a `tsconfig.json` whose only job is to extend
+  the generated `.svelte-kit/tsconfig.json`, and that directory is gitignored —
+  so on a fresh clone steiger did not degrade, it died with a `MODULE_NOT_FOUND`
+  stack trace.
+
 ### Notes
 
 The generated `docs/fsd.md` leaves `widgets/` closed and says that is **this

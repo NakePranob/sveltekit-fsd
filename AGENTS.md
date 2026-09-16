@@ -91,6 +91,16 @@ Ported code from nextjs-fsd is wrong by default in these places:
   `query.data`, not `$query.data`. The v5 store API is a different major.
   `createQuery` / `createMutation` / `useQueryClient` only work during component
   initialisation.
+- **Anything that resolves the `@/` alias needs `svelte-kit sync` first.** The
+  project's `tsconfig.json` does nothing but extend the generated
+  `.svelte-kit/tsconfig.json`, which is gitignored — so on a fresh clone steiger
+  does not degrade, it dies with a `MODULE_NOT_FOUND` stack trace out of
+  tsconfck. The generated `lint` script syncs before steiger for that reason,
+  the same way SvelteKit's own `check` script does.
+- **A segment with one file and no `index.ts` is a steiger error.** It is why
+  `add error-handling` appends to `shared/auth/index.ts` for the access token it
+  writes there, months before `add auth` may run. Any new `add` that drops a
+  file into a segment another command owns has the same obligation.
 - **`goto()` goes through `resolve()`** from `$app/paths`, or takes a value
   typed `ResolvedPathname`. `svelte/no-navigation-without-resolve` is an *error*
   in a stock `sv create` ESLint config, so a bare string means generated code

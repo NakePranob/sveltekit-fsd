@@ -97,4 +97,21 @@ run("npm", ["run", "build"]);
 step("lint — prettier --check included, since `add prettier` puts it there");
 run("npm", ["run", "lint"]);
 
+// The ship path, which nothing else exercises: every test above runs the CLI
+// out of the checkout, where `getTemplatesRoot` finds templates/ one directory
+// further up than it does once installed. A template tree left out of `files`,
+// or a candidate path that only works from source, fails here and nowhere else.
+step("pack, install the tarball, and generate with that");
+const packed = path.join(dir, "packed");
+fs.mkdirSync(packed, { recursive: true });
+run("npm", ["pack", "--pack-destination", packed], repo);
+const tarball = path.join(packed, fs.readdirSync(packed).find((f) => f.endsWith(".tgz")));
+fs.writeFileSync(path.join(packed, "package.json"), JSON.stringify({ name: "host", private: true }));
+run("npm", ["install", tarball], packed);
+const installed = path.join(packed, "node_modules", ".bin", "sveltekit-fsd");
+run(installed, ["generate", "slice", "entities", "loan", "--segments", "ui", "--defaults"]);
+if (!fs.existsSync(path.join(app, "src/entities/loan/ui/loan.svelte"))) {
+  throw new Error("the installed CLI did not render its templates");
+}
+
 console.log(`\nintegration: ok\n${app}`);

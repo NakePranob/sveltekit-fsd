@@ -262,7 +262,15 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   // boundary file of ours to spread in.
   const eslintPatch = ownsImportRules ? "already" : patchEslintConfig(projectDir, ESLINT_FSD_FILE);
   if (eslintPatch === "patched") written.push("eslint.config.js (spreads the FSD boundary rules)");
-  if (appendScript(projectDir, "lint", `steiger ./${srcDir}`)) written.push("package.json (lint script)");
+  // `svelte-kit sync` first, and not for tidiness: steiger resolves the `@/`
+  // alias through the project's tsconfig, which does nothing but extend the
+  // generated `.svelte-kit/tsconfig.json`. That directory is gitignored, so on a
+  // fresh clone — or after anyone cleans build output — it is not there, and
+  // steiger does not degrade, it dies with a MODULE_NOT_FOUND stack trace. The
+  // project's own `check` script syncs for the same reason.
+  if (appendScript(projectDir, "lint", `svelte-kit sync && steiger ./${srcDir}`)) {
+    written.push("package.json (lint script)");
+  }
 
   const hook =
     opts.hooks === false ? undefined : installCommitHook(projectDir, renderTemplate("init/commit-msg.hbs", context));
