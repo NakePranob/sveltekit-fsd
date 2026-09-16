@@ -11,7 +11,7 @@ renders.
 Rules that are easy to break without noticing:
 
 - imports point downwards only, and a slice is imported through its `index.ts`
-- `$lib/` and `{{alias}}/` are the same tree — `kit.files.lib` points `$lib` at `{{srcDir}}/`, so the boundary applies to both spellings
+- `$lib/` is SvelteKit's own `{{srcDir}}/lib/`, not a layer — `kit.files.lib` is left at its default. Shared code goes in `{{srcDir}}/shared/` and is imported as `{{alias}}/shared/...`, the only spelling the boundary rules know
 - `{{routesDir}}/<route>/+page.svelte` renders an FSD page and nothing else; the title travels with the component in its own `<svelte:head>`
 - a module using runes must be named `*.svelte.ts`, and be imported without the `.ts` — rename it to a plain `.ts` and `$state` silently becomes an undefined function
 - `createQuery` / `createMutation` / `useQueryClient` are called during component initialisation, never from an event handler — they read Svelte context

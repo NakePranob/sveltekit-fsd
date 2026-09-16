@@ -103,6 +103,11 @@ the opposite shape. `init` detects which one is live and patches that one —
 writing to the other would leave a file with correct values that nothing reads,
 and routes that moved with nothing pointing at them.
 
+If that config already sets `files` or `alias`, `init` stops before moving
+anything and prints the block to merge in by hand. A second key of the same
+name is not an error in JavaScript — the later one wins — so adding ours next
+to yours would silently drop one of them. Merge it, then run `init` again.
+
 `tsconfig.json` is **not** touched. SvelteKit writes `kit.alias` into the
 generated `.svelte-kit/tsconfig.json` that yours extends, so Vite,
 `svelte-check`, your editor and steiger all resolve `@/` from one place.

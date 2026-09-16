@@ -4,6 +4,32 @@ All notable changes to @nakedev/sveltekit-fsd are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- **`init` refuses a SvelteKit config that already sets `files` or `alias`, and
+  refuses before moving anything.** Its keys went in at the top of the options
+  object, and JavaScript keeps the later of two equal keys — so the project's
+  own `alias` silently replaced `@/*` (or its `files` the moved routes) while
+  init reported the config as patched. It now prints the block to merge by hand
+  and leaves the tree untouched; before, an unpatchable config was discovered
+  only after the routes had moved.
+- **The docs `init` writes no longer say `$lib` and `@/` are one tree.**
+  `docs/fsd.md`, the AGENTS.md section, the `sveltekit-fsd` skill and the
+  methodology skill's SvelteKit section all described `kit.files.lib: 'src'`,
+  which init has never set. Re-copy those passages into a project initialised
+  with 0.1.0: an agent following them writes `$lib/shared/...` imports that
+  resolve nowhere.
+- **Imports are no longer spliced into a wrapped import.** The layout and ESLint
+  patchers inserted after the *first line* of the last import, so a last import
+  prettier had wrapped came out unparseable, reported as `patched`.
+- **Applying an existing layout to a second route no longer exports it twice.**
+  The barrel check compared text exactly, and `sv add prettier`'s singleQuote
+  had already rewritten the line — a duplicate export is a syntax error.
+- **Installing dependencies works on Windows.** npm, npx, pnpm and yarn are
+  `.cmd` shims there, which `execFile` cannot start.
+
 ## 0.1.0
 
 First release. A SvelteKit sibling to

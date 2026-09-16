@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs-extra";
-import { execFileSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import pc from "picocolors";
 import { PackageManager } from "../types";
 
@@ -207,11 +207,34 @@ export function detectKitConfig(projectDir: string): KitConfig {
 export function patchKitConfig(
   projectDir: string,
   config: KitConfig,
-  options: { routesDir: string; appTemplate: string; alias: string; srcDir: string }
+  options: KitConfigOptions
 ): "patched" | "already" | "manual" {
-  const file = path.join(projectDir, config.file);
-  const source = fs.readFileSync(file, "utf8");
-  if (source.includes("appTemplate")) return "already";
+  const patched = kitConfigPatch(projectDir, config, options);
+  if (patched === "already" || patched === "manual") return patched;
+  return write(path.join(projectDir, config.file), patched);
+}
+
+export type KitConfigOptions = { routesDir: string; appTemplate: string; alias: string; srcDir: string };
+
+/**
+ * What `patchKitConfig` would write, without writing it — so `init` can find
+ * out the config is unpatchable before it has moved a single route.
+ */
+export function kitConfigPatch(
+  projectDir: string,
+  config: KitConfig,
+  options: KitConfigOptions
+): string | "already" | "manual" {
+  const source = fs.readFileSync(path.join(projectDir, config.file), "utf8");
+  const quoted = (value: string) => source.includes(`'${value}'`) || source.includes(`"${value}"`);
+  if (quoted(options.routesDir) && quoted(options.appTemplate) && quoted(`${options.alias}/*`)) return "already";
+  // Our keys go in at the top of the object, and JavaScript does not reject a
+  // key written twice — the later one wins. A `files` or `alias` the project
+  // already has would silently replace ours: routes moved with nothing pointing
+  // at them, or an `@/` that resolves nowhere, from a patch that said it worked.
+  // ponytail: searched file-wide, so a Vite `resolve.alias` refuses too. That
+  // errs toward printed instructions; scope it to the options object if it bites.
+  if (/\b(files|alias)["']?\s*:/.test(source)) return "manual";
 
   const block =
     `files: {\n` +
@@ -230,18 +253,18 @@ export function patchKitConfig(
     if (!call) return "manual";
     const at = call.index + call[0].length;
     if (call[1] === "{") {
-      return write(file, source.slice(0, at) + `\n\t\t\t${block.trimEnd()}` + source.slice(at));
+      return source.slice(0, at) + `\n\t\t\t${block.trimEnd()}` + source.slice(at);
     }
     // `sveltekit()` — give it an options object of its own.
     const openAt = source.lastIndexOf("(", at);
-    return write(file, `${source.slice(0, openAt + 1)}{\n\t\t\t${block.trimEnd()}\n\t\t}${source.slice(at - 1)}`);
+    return `${source.slice(0, openAt + 1)}{\n\t\t\t${block.trimEnd()}\n\t\t}${source.slice(at - 1)}`;
   }
 
   // svelte.config.js: the same block goes inside `kit: { ... }`.
   const kit = /\bkit\s*:\s*\{/.exec(source);
   if (!kit) return "manual";
   const at = kit.index + kit[0].length;
-  return write(file, source.slice(0, at) + `\n\t\t${block.trimEnd()}` + source.slice(at));
+  return source.slice(0, at) + `\n\t\t${block.trimEnd()}` + source.slice(at);
 }
 
 function write(file: string, contents: string): "patched" {
@@ -251,12 +274,7 @@ function write(file: string, contents: string): "patched" {
 
 /** The block `patchKitConfig` would have inserted, for printing when it could
  *  not find a place to put it. One source of truth for both. */
-export function kitConfigSnippet(options: {
-  routesDir: string;
-  appTemplate: string;
-  alias: string;
-  srcDir: string;
-}): string {
+export function kitConfigSnippet(options: KitConfigOptions): string {
   return (
     `  files: {\n` +
     `    routes: '${options.routesDir}',\n` +
@@ -299,10 +317,18 @@ export function addDependencies(
   return added;
 }
 
+// Through a shell, and not for convenience: on Windows npm, npx, pnpm and yarn
+// are `.cmd` shims, which execFile cannot start at all (ENOENT, or EINVAL since
+// Node 20.12). The command is built from constants, so there is nothing to
+// quote — and a string rather than an args array, because Node 24 warns
+// (DEP0190) about the array form with `shell: true`.
+function runShell(projectDir: string, command: string): void {
+  console.log(pc.dim(`> ${command}`));
+  execSync(command, { cwd: projectDir, stdio: "inherit" });
+}
+
 export function installDependencies(projectDir: string, manager: PackageManager): void {
-  const command = manager === "npm" ? ["npm", "install"] : [manager, "install"];
-  console.log(pc.dim(`> ${command.join(" ")}`));
-  execFileSync(command[0], command.slice(1), { cwd: projectDir, stdio: "inherit" });
+  runShell(projectDir, `${manager} install`);
 }
 
 export type HookResult =
@@ -374,8 +400,7 @@ function gitConfig(repoRoot: string, key: string): string | undefined {
 
 export function runCommand(projectDir: string, manager: PackageManager, args: string[]): void {
   const runner = manager === "npm" ? "npx" : manager === "yarn" ? "yarn" : manager === "pnpm" ? "pnpm" : "bunx";
-  console.log(pc.dim(`> ${runner} ${args.join(" ")}`));
-  execFileSync(runner, args, { cwd: projectDir, stdio: "inherit" });
+  runShell(projectDir, [runner, ...args].join(" "));
 }
 
 /**
@@ -403,7 +428,13 @@ export function appendExport(projectDir: string, barrel: string, line: string): 
     return true;
   }
   const current = fs.readFileSync(file, "utf8");
-  if (current.includes(line)) return false;
+  // Compared the way prettier leaves it, not byte for byte: the line is written
+  // with double quotes, and the singleQuote config `sv add prettier` writes
+  // rewrites it on the next format — or wraps it, with a trailing comma. An exact
+  // match misses both and appends the export a second time, which is a syntax
+  // error, not a duplicate.
+  const shape = (text: string) => text.replace(/'/g, '"').replace(/[\s,;]/g, "");
+  if (shape(current).includes(shape(line))) return false;
   fs.writeFileSync(file, current.replace(/\n*$/, "\n") + `${line}\n`);
   return true;
 }
@@ -606,12 +637,25 @@ export function patchLayoutProviders(
  * delete instead of fixing.
  */
 function withImport(source: string, scriptClose: number, line: string): string {
-  const script = source.slice(0, scriptClose);
-  const imports = [...script.matchAll(/^[ \t]*import .*$/gm)];
-  const lastImport = imports[imports.length - 1];
-  // index 0 is a real position: a script block whose first line is an import.
-  const insertAt = lastImport?.index === undefined ? scriptClose : script.indexOf("\n", lastImport.index) + 1;
+  const insertAt = afterLastImport(source.slice(0, scriptClose)) ?? scriptClose;
   return source.slice(0, insertAt) + `\t${line}\n` + source.slice(insertAt);
+}
+
+/**
+ * A whole import statement, from `import` to the closing quote of its
+ * specifier — across lines, because `[^;'"]` matches a newline. Anchoring on the
+ * first line alone is how an import list that prettier wrapped gets a new import
+ * spliced into the middle of its braces.
+ */
+const IMPORT_STATEMENT = /^[ \t]*import\b[^;'"]*['"][^'"\n]*['"][ \t]*;?[ \t]*$/gm;
+
+/** The offset just past the line that ends the last import, if there is one. */
+function afterLastImport(source: string): number | undefined {
+  const last = [...source.matchAll(IMPORT_STATEMENT)].pop();
+  // index 0 is a real position: a source whose first line is an import.
+  if (last?.index === undefined) return undefined;
+  const lineEnd = source.indexOf("\n", last.index + last[0].length);
+  return lineEnd === -1 ? undefined : lineEnd + 1;
 }
 
 /**
@@ -692,11 +736,8 @@ export function patchEslintConfig(projectDir: string, configFile: string): "patc
     .replace(/;\s*$/, "");
   if (expression === "") return "manual";
 
-  const imports = [...source.matchAll(/^import .*$/gm)];
-  const lastImport = imports[imports.length - 1];
-  // index 0 is a real position: a config whose first line is an import.
-  if (lastImport?.index === undefined) return "manual";
-  const importAt = source.indexOf("\n", lastImport.index) + 1;
+  const importAt = afterLastImport(source);
+  if (importAt === undefined) return "manual";
 
   const rewritten =
     source.slice(0, exportAt) +

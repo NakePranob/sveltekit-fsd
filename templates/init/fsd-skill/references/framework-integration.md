@@ -463,6 +463,7 @@ my-sveltekit-project/
       ui/
       lib/
       api/
+    lib/                   ← SvelteKit's own $lib, left alone — not a layer
   static/                  ← SvelteKit static assets
 ```
 
@@ -479,7 +480,6 @@ silent failure, with correct values that nothing loads.
 // vite.config.ts — inside sveltekit({ ... }), or svelte.config.js under kit
 files: {
   routes: 'src/app/routes',
-  lib: 'src',
   appTemplate: 'src/app/index.html'
 },
 alias: {
@@ -487,21 +487,23 @@ alias: {
 }
 ```
 
-`lib: 'src'` points `$lib` at the same tree as the alias, so `$lib/shared/ui` and
-`@/shared/ui` are one module. Without it, `src/lib/` survives as a second home
-for shared code next to `shared/`, and an import boundary expressed for one
-spelling has a documented bypass in the other. Moving an existing `src/lib/` into
-`shared/` is part of adopting this, not an optional tidy-up.
+The FSD guide also sets `lib: 'src'`, which would point `$lib` at the same tree
+as the alias. This layout leaves it at its default: adopting it means moving
+everything in `src/lib/` and rewriting every `$lib/` import, and the layout is
+set up without moving code anyone wrote. So `$lib` still means `src/lib/`, which
+is not a layer. Shared code goes in `shared/` and is imported as `@/shared/...`
+— the only spelling the import boundary knows — and `src/lib/` is ignored by
+Steiger and should not grow.
 
-The FSD guide also sets `assets: 'public'`. That is a rename of `static/` with no
+The guide sets `assets: 'public'` as well. That is a rename of `static/` with no
 FSD content — leave it unless the project wants it for its own reasons.
 
 ### Path aliases
 
-Nothing to add to `tsconfig.json`. SvelteKit writes `kit.alias` and `kit.files.lib`
-into the generated `.svelte-kit/tsconfig.json` that the project's own tsconfig
-extends, so Vite, `svelte-check`, the editor and Steiger all resolve `@/` from one
-place. Run `svelte-kit sync` (the `prepare` script does) before anything reads it.
+Nothing to add to `tsconfig.json`. SvelteKit writes `kit.alias` into the
+generated `.svelte-kit/tsconfig.json` that the project's own tsconfig extends,
+so Vite, `svelte-check`, the editor and Steiger all resolve `@/` from one place.
+Run `svelte-kit sync` (the `prepare` script does) before anything reads it.
 
 ### Wiring SvelteKit routes to FSD pages
 

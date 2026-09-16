@@ -19,6 +19,7 @@ const dist = (file) => pathToFileURL(path.join(repo, "dist", "utils", file)).hre
 
 const {
   addLayoutImport,
+  appendExport,
   detectKitConfig,
   detectStylesheetImport,
   eslintRestrictsImports,
@@ -125,6 +126,17 @@ test("patchKitConfig reports rather than guesses when there is nowhere to put it
   );
 });
 
+test("patchKitConfig refuses an options object that already sets files or alias", () => {
+  // Ours would go in first, and JavaScript keeps the later of two equal keys:
+  // the project's `alias` silently replaces `@/*`, its `files` the moved routes.
+  for (const options of ["alias: { $components: 'src/components' }", "files: { lib: 'src/lib' }"]) {
+    const source = `import { sveltekit } from '@sveltejs/kit/vite';\nexport default { plugins: [sveltekit({ ${options} })] };\n`;
+    const dir = fixture({ "package.json": KIT_PKG, "vite.config.ts": source });
+    assert.equal(patchKitConfig(dir, { file: "vite.config.ts", style: "vite" }, KIT_OPTIONS), "manual", options);
+    assert.equal(fs.readFileSync(path.join(dir, "vite.config.ts"), "utf8"), source, "and leaves the file alone");
+  }
+});
+
 test("patchKitConfig is idempotent", () => {
   const dir = fixture({
     "package.json": KIT_PKG,
@@ -150,6 +162,16 @@ test("patchEslintConfig handles the defineConfig(...) call sv create writes", ()
     true,
     "the import comes before the use"
   );
+});
+
+test("patchEslintConfig puts its import after a wrapped import, not inside it", () => {
+  const dir = fixture({
+    "eslint.config.js":
+      "import js from '@eslint/js';\nimport {\n\tdefineConfig,\n\tglobalIgnores\n} from 'eslint/config';\n\nexport default defineConfig(js.configs.recommended);\n",
+  });
+  assert.equal(patchEslintConfig(dir, "eslint.fsd.js"), "patched");
+  const patched = fs.readFileSync(path.join(dir, "eslint.config.js"), "utf8");
+  assert.match(patched, /\} from 'eslint\/config';\nimport fsdBoundary from '\.\/eslint\.fsd\.js';\n/);
 });
 
 test("patchEslintConfig handles `export default someConst;`", () => {
@@ -194,6 +216,16 @@ test("patchLayoutProviders wraps the render tag and imports inside the script bl
     "after the imports already there, not before them"
   );
   assert.equal(patchLayoutProviders(dir, "src/app/routes/+layout.svelte", "@"), "already");
+});
+
+test("patchLayoutProviders puts its import after a wrapped import, not inside it", () => {
+  const dir = fixture({
+    "src/app/routes/+layout.svelte":
+      "<script lang=\"ts\">\n\timport {\n\t\tonMount\n\t} from 'svelte';\n\n\tlet { children } = $props();\n</script>\n\n{@render children()}\n",
+  });
+  assert.equal(patchLayoutProviders(dir, "src/app/routes/+layout.svelte", "@"), "patched");
+  const patched = fs.readFileSync(path.join(dir, "src/app/routes/+layout.svelte"), "utf8");
+  assert.match(patched, /\t\} from 'svelte';\n\timport \{ Providers \} from '@\/app\/providers';\n/);
 });
 
 test("patchLayoutProviders reports rather than mangling a layout with no render tag", () => {
@@ -244,6 +276,20 @@ test("addLayoutImport gives a script-less layout a script block", () => {
   const patched = fs.readFileSync(path.join(dir, "src/app/routes/+layout.svelte"), "utf8");
   assert.match(patched, /^<script lang="ts">\n\timport '@\/app\/styles\/app\.css';\n<\/script>/);
   assert.equal(addLayoutImport(dir, "src/app/routes/+layout.svelte", "import '@/app/styles/app.css';"), false);
+});
+
+test("appendExport recognises a line prettier has already rewritten", () => {
+  // The line is written with double quotes; `sv add prettier` sets singleQuote,
+  // and a long line comes back wrapped with a trailing comma. Appending it again
+  // would be a duplicate export — a syntax error.
+  const line = 'export { sessionKey, useLogin, type Session } from "./session";';
+  const dir = fixture({
+    "a.ts": "export { sessionKey, useLogin, type Session } from './session';\n",
+    "b.ts": "export {\n\tsessionKey,\n\tuseLogin,\n\ttype Session,\n} from './session';\n",
+  });
+  assert.equal(appendExport(dir, "a.ts", line), false);
+  assert.equal(appendExport(dir, "b.ts", line), false);
+  assert.equal(appendExport(dir, "a.ts", 'export { useLogout } from "./session";'), true, "a different export still goes in");
 });
 
 test("validateRoute accepts SvelteKit's own segment forms and rejects the rest", () => {
