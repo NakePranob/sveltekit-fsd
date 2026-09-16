@@ -50,7 +50,13 @@ read stdout would pass against a linter that said nothing at all.
 npm run test:integration   # slow, networked: real sv create + install + check + lint + build
 ```
 
-Four checks, four different failures, none subsuming another:
+The `version` CI job runs on pull requests into `main`. It requires the root
+package version to increase from the pull request base and requires
+`package-lock.json` to carry that same version; `npm version patch
+--no-git-tag-version` updates both package files.
+
+The generated project has four checks, four different failures, none subsuming
+another:
 
 | | catches | misses |
 |---|---|---|

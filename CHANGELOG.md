@@ -4,6 +4,14 @@ All notable changes to @nakedev/sveltekit-fsd are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.2
+
+### Changed
+
+- Pull requests into `main` must increase the root package version. CI compares
+  it with the pull request base and checks that `package-lock.json` carries the
+  same version before the branch can merge.
+
 ## 0.1.1
 
 ### Fixed

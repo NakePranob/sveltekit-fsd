@@ -271,6 +271,21 @@ See [AGENTS.md](AGENTS.md) for what each check catches and what it misses, and
 [docs/design-notes.md](docs/design-notes.md) for why the generated code looks the
 way it does.
 
+## Releases
+
+Every pull request into `main` must increase the root `package.json` version.
+The CI version check compares it with the pull request base and also requires
+`package-lock.json` to carry the same version. Use npm to update both files:
+
+```bash
+npm version patch --no-git-tag-version
+npm run verify
+```
+
+After the version change is merged, create an annotated `vX.Y.Z` tag on that
+`main` commit. The release workflow verifies that the tag matches
+`package.json` before publishing.
+
 ## License
 
 MIT
