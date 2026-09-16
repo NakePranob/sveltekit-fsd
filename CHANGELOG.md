@@ -8,6 +8,26 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A page generated with `--auth` rendered a 500.** `requireSession` calls
+  `$effect` and lived in `shared/auth/require-session.ts`; runes are compiled,
+  and the compiler only processes `.svelte` components and `*.svelte.ts`
+  modules, so the call survived into the output as a bare identifier and every
+  guarded page answered `$effect is not defined` — on the server and in the
+  browser. Re-copy `shared/auth/`: the module is now
+  `require-session.svelte.ts`, and `safeNext` has moved to a plain
+  `safe-next.ts`, which is what the `index.ts` barrel exports it from.
+
+  The split is not cosmetic. Under `.svelte.ts`, eslint-plugin-svelte applies
+  its rune-aware rules and `svelte/prefer-svelte-reactivity` reports the
+  throwaway `new URL(...)` inside `safeNext` as reactive state — an error in a
+  stock `sv create` config, so the generated code would have failed the
+  project's own lint.
+
+  Nothing static caught the original: `$effect` is a declared global, so
+  svelte-check, eslint, steiger and `vite build` were all green.
+  `test:integration` now starts the dev server and asks it for the generated
+  pages, which is the only check here that runs the code rather than reading it.
+
 - **`init` refuses a SvelteKit config that already sets `files` or `alias`, and
   refuses before moving anything.** Its keys went in at the top of the options
   object, and JavaScript keeps the later of two equal keys — so the project's
