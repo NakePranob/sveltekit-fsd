@@ -134,9 +134,15 @@ console.log(`\nintegration: ok\n${app}`);
 async function renderCheck(routes) {
   const port = 5199;
   const log = [];
+  // Its own process group, so the whole tree can be taken down at the end.
+  // `npm run dev` is a parent of vite, and signalling only the parent leaves
+  // vite running with the inherited pipes open — which keeps this script's event
+  // loop alive after it has printed its result, and the job is then killed by
+  // its timeout having actually passed.
   const dev = spawnProcess("npm", ["run", "dev", "--", "--port", String(port), "--strictPort"], {
     cwd: app,
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   });
   dev.stdout.on("data", (d) => log.push(String(d)));
   dev.stderr.on("data", (d) => log.push(String(d)));
@@ -162,6 +168,13 @@ async function renderCheck(routes) {
       }
     }
   } finally {
-    dev.kill("SIGTERM");
+    try {
+      process.kill(-dev.pid, "SIGKILL"); // the group, not just npm
+    } catch {
+      dev.kill("SIGKILL");
+    }
+    dev.stdout.destroy();
+    dev.stderr.destroy();
+    dev.unref();
   }
 }
