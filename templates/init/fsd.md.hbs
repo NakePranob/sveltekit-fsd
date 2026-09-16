@@ -22,14 +22,13 @@
 
 Routing lives **inside** the app layer, which is what the
 [FSD SvelteKit guide](https://feature-sliced.design/docs/guides/tech/with-sveltekit)
-asks for and the opposite of where SvelteKit puts it by default. Three settings
+asks for and the opposite of where SvelteKit puts it by default. These settings
 make that real, and they live in the SvelteKit config (`vite.config.ts` in a
 project made by a recent `sv create`, `svelte.config.js` in an older one):
 
 ```js
 files: {
   routes: '{{routesDir}}',
-  lib: '{{srcDir}}',
   appTemplate: '{{srcDir}}/app/index.html'
 },
 alias: {
@@ -37,12 +36,14 @@ alias: {
 }
 ```
 
-`lib: '{{srcDir}}'` is the one worth understanding. It points `$lib` at the same
-tree `{{alias}}` points at, so `$lib/shared/ui` and `{{alias}}/shared/ui` are the
-same module. Without it, `{{srcDir}}/lib/` survives as a second home for shared
-code next to `shared/` — which is the exact drift FSD exists to prevent. The
-import boundary knows both spellings anyway, because a rule with a documented
-bypass is not a rule.
+`kit.files.lib` is **not** set, although the FSD guide sets it to `'{{srcDir}}'`.
+Pointing `$lib` at the layers would mean moving everything already in
+`{{srcDir}}/lib/` and rewriting every `$lib/` import, and `init` moves no code
+anyone wrote. So `$lib` still means `{{srcDir}}/lib/` — SvelteKit's own
+directory, not a layer. Shared code goes in `shared/` and is imported as
+`{{alias}}/shared/...`; that is the only spelling the import boundary knows, and
+steiger ignores `{{srcDir}}/lib/`. Do not grow it: two homes for shared code is
+the drift the layers exist to prevent.
 
 `init` does not touch `tsconfig.json`: SvelteKit writes the alias into the
 generated `.svelte-kit/tsconfig.json` that yours extends, so `svelte-check`,

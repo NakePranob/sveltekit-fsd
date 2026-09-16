@@ -188,6 +188,18 @@ check(
   "the methodology skill is copied verbatim — Handlebars would have eaten this Vue example"
 );
 check(read(full, "AGENTS.md").includes("Feature-Sliced Design"), "AGENTS.md gained the FSD section");
+// init leaves `kit.files.lib` alone, and every doc it writes has to say so. These
+// four once told agents `$lib` and `@/` were one tree, which sends them to write
+// `$lib/shared/...` imports that resolve nowhere.
+for (const doc of [
+  "docs/fsd.md",
+  "AGENTS.md",
+  ".agents/skills/sveltekit-fsd/SKILL.md",
+  ".agents/skills/feature-sliced-design/references/framework-integration.md",
+]) {
+  const text = read(full, doc);
+  check(!/^\s+lib: '|(is|are) the same tree/m.test(text), `${doc} does not claim $lib and @/ are one tree`);
+}
 
 // --- nothing a template should never emit -----------------------------------
 for (const file of generatedFiles(full)) {
@@ -228,6 +240,16 @@ check(
   fails(full, ["add", "auth", "-y"], "already installed"),
   "add auth refuses to run twice"
 );
+
+// A layout applied a second time adds one route file and no second export —
+// even after `sv add prettier`'s singleQuote has rewritten the export line,
+// which an exact-text match misses and appends again: a duplicate export is a
+// syntax error. The rewrite is done by hand; this fixture has no prettier.
+const layouts = path.join(full, "src/app/layouts/index.ts");
+fs.writeFileSync(layouts, fs.readFileSync(layouts, "utf8").replaceAll('"', "'"));
+run(full, ["generate", "layout", "admin", "--route", "reports-shell", "--defaults"]);
+check(exists(full, "src/app/routes/reports-shell/+layout.svelte"), "an existing layout can be applied to a second route");
+check(read(full, "src/app/layouts/index.ts").match(/AdminLayout/g).length === 1, "without exporting AdminLayout twice");
 
 // A page generated under a route group does not get a second route file.
 run(full, ["generate", "page", "reports", "--route", "(admin)/reports", "--defaults"]);
@@ -271,6 +293,23 @@ check(authIndex.includes("PROJECT_OWNED"), "add auth keeps what the project put 
 check(authIndex.includes("./access-token") && authIndex.includes("./session") && authIndex.includes("./require-session"),
   "and every export is there afterwards");
 check(authIndex.match(/from "\.\/access-token"/g).length === 1, "without duplicating the line it already had");
+
+// A config that already sets `alias` would override the one init adds — JS keeps
+// the later of two equal keys — so init has to refuse, and refuse before it has
+// moved anything: routes relocated with nothing pointing at them is no app.
+console.log("smoke: a kit config init cannot patch safely");
+const owned = makeFixture("owned");
+write(
+  owned,
+  "vite.config.ts",
+  `import { sveltekit } from '@sveltejs/kit/vite';\n\nexport default {\n\tplugins: [sveltekit({ alias: { $components: 'src/components' } })]\n};\n`
+);
+check(
+  fails(owned, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"], "Nothing was moved"),
+  "init refuses a config that already sets alias"
+);
+check(exists(owned, "src/routes/+layout.svelte") && exists(owned, "src/app.html"), "and moves nothing");
+check(!exists(owned, "sveltekit-fsd.config.json"), "and writes nothing");
 
 console.log("smoke: minimal project (no eslint, no tailwind, no vitest)");
 const min = makeFixture("min", { eslint: false, tailwind: false });

@@ -20,9 +20,9 @@ import {
   hasDependency,
   installCommitHook,
   installDependencies,
+  kitConfigPatch,
   kitConfigSnippet,
   patchEslintConfig,
-  patchKitConfig,
   patchLayoutStyleImport,
   patchPrettierTailwindStylesheet,
   rootLayoutPath,
@@ -69,6 +69,20 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   // import resolves to `src/src/app/...`, which is nothing.
   const aliasStylesheet = stylesheet.slice(srcDir.length + 1);
   const packageManager = detectPackageManager(projectDir);
+
+  // Worked out now and written after the moves. A config this cannot patch has
+  // to stop init here, while nothing has moved: routes relocated with no
+  // `kit.files` pointing at them is an app with no pages.
+  const kitOptions = { routesDir, appTemplate, alias, srcDir };
+  const kitSource = kitConfigPatch(projectDir, kitConfig, kitOptions);
+  if (kitSource === "manual") {
+    throw new Error(
+      `could not patch ${kitConfig.file} safely — it already sets \`files\` or \`alias\` (a second key would silently override one of them), ` +
+        `or has no ${kitConfig.style === "vite" ? "`sveltekit({ ... })` options object" : "`kit: { ... }` block"} to add to. Nothing was moved.\n` +
+        `Add this ${kitConfig.style === "vite" ? "inside the `sveltekit({ ... })` options" : "inside `kit: { ... }`"}, merged with what is there, then re-run \`sveltekit-fsd init\`:\n` +
+        kitConfigSnippet(kitOptions)
+    );
+  }
 
   const currentRoutes = existingRoutesDir(projectDir, srcDir);
   if (currentRoutes === undefined) {
@@ -167,8 +181,10 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     written.push(`${appTemplate} ${pc.dim(`(moved from ${currentAppHtml})`)}`);
   }
 
-  const kitPatch = patchKitConfig(projectDir, kitConfig, { routesDir, appTemplate, alias, srcDir });
-  if (kitPatch === "patched") written.push(`${kitConfig.file} (kit.files + kit.alias)`);
+  if (kitSource !== "already") {
+    fs.writeFileSync(path.join(projectDir, kitConfig.file), kitSource);
+    written.push(`${kitConfig.file} (kit.files + kit.alias)`);
+  }
 
   const context = {
     srcDir,
@@ -314,13 +330,6 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
 
   report(written, added);
 
-  if (kitPatch === "manual") {
-    console.log(
-      pc.red(`\ncould not patch ${kitConfig.file} — the routes have moved and nothing points at them yet.`) +
-        `\nAdd this ${kitConfig.style === "vite" ? "inside the `sveltekit({ ... })` options" : "inside `kit: { ... }`"}, or the app will not build:\n` +
-        kitConfigSnippet({ routesDir, appTemplate, alias, srcDir })
-    );
-  }
   if (eslintPatch !== "patched" && eslintPatch !== "already") {
     console.log(
       pc.yellow(

@@ -144,8 +144,9 @@ Breaking one of these is silent — the build passes and the app is wrong.
   component's own `<svelte:head>`; there is nothing to re-export.
 - **Imports point downwards, and a slice is entered through its `index.ts`.**
   `{{alias}}/features/x`, never `{{alias}}/features/x/ui/x.svelte`. Inside a
-  slice the import is relative. `$lib/` is the same tree as `{{alias}}/`, so it
-  is the same rule.
+  slice the import is relative. `$lib/` is SvelteKit's own `{{srcDir}}/lib/`,
+  not a layer: shared code goes in `{{srcDir}}/shared/`, imported as
+  `{{alias}}/shared/...`.
 - **Never render `error.message` as UI copy.** Add the code to the domain's own
   catalog (`model/<name>-errors.ts`) and let the fallback name the action that
   failed. A backend message is written for a log.
