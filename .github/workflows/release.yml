@@ -32,14 +32,14 @@ jobs:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.tag || github.ref }}
           # Unshallow, because the release check reads tag objects and compares
           # them against HEAD.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           # 24, like the integration job in ci.yml and for the same reason: this
           # job runs `test:integration`, which generates a real SvelteKit app,
