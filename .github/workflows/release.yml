@@ -41,7 +41,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 24, like the integration job in ci.yml and for the same reason: this
+          # job runs `test:integration`, which generates a real SvelteKit app,
+          # and npm 10 — which Node 22 ships — cannot install the dependency
+          # graph `sv create` produces. The release would die before publishing.
+          node-version: 24
           # registry-url is deliberately absent. It makes setup-node write an
           # .npmrc holding the literal placeholder XXXXX-XXXXX-XXXXX-XXXXX, and
           # npm then authenticates with that junk instead of exchanging the
@@ -64,8 +68,26 @@ jobs:
       # Node 22 still ships npm 10.x, which fails with ENEEDAUTH.
       - run: npm install -g npm@latest && npm --version
 
+      # Skipped rather than attempted when the version is already up, for the
+      # same reason the GitHub Release below is: `workflow_dispatch` exists so a
+      # publish that half-succeeded can be re-run, and npm refuses to replace a
+      # version that exists — so without this, every retry dies at the one step
+      # that already worked and never reaches the steps that did not.
+      #
+      # It is also what makes the first release survivable. A package that does
+      # not exist yet cannot have a trusted publisher configured (npm needs the
+      # package to exist before it will show you its settings), so 0.1.0 has to
+      # be pushed from a machine, and the tag then fires this workflow over a
+      # version that is already there.
       - name: Publish from the verified tag
-        run: npm publish --provenance --access public
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION is already on the registry — nothing to publish"
+          else
+            npm publish --provenance --access public
+          fi
 
       - name: Create the GitHub Release if it does not exist
         env:
