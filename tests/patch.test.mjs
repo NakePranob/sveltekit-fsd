@@ -8,9 +8,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// pathToFileURL, not the bare path: ESM `import()` takes a URL, and on Windows
+// an absolute path starts `D:\` — which the loader reads as a `d:` protocol and
+// rejects. On a unix host the two spellings are indistinguishable, so this only
+// ever fails in CI.
+const dist = (file) => pathToFileURL(path.join(repo, "dist", "utils", file)).href;
+
 const {
   addLayoutImport,
   detectKitConfig,
@@ -21,8 +27,8 @@ const {
   patchLayoutProviders,
   patchLayoutStyleImport,
   patchPrettierTailwindStylesheet,
-} = await import(path.join(repo, "dist", "utils", "project.js"));
-const { validateRoute, normalizeRoute } = await import(path.join(repo, "dist", "utils", "naming.js"));
+} = await import(dist("project.js"));
+const { validateRoute, normalizeRoute } = await import(dist("naming.js"));
 
 const KIT_OPTIONS = {
   routesDir: "src/app/routes",

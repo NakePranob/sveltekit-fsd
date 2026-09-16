@@ -44,7 +44,14 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 24, not 22, and for the app this job generates rather than for the
+          # CLI. Node 22 ships npm 10, and npm 10's arborist cannot resolve the
+          # dependency graph a current `sv create` produces with its add-ons —
+          # it dies with "Cannot read properties of null (reading 'edgesOut')"
+          # on an untouched scaffold, before this CLI has touched anything.
+          # Node 24 ships npm 11, which installs it. The `verify` job stays on
+          # 22 because that is where the CLI's own `engines` are tested.
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run build

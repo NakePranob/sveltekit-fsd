@@ -63,6 +63,13 @@ That last row exists because a flat config with a glob that matches no file
 loads cleanly, lints nothing, and reads exactly like one that works. The probe
 writes a deliberate upward import and fails the run if ESLint stays quiet.
 
+The integration job runs on Node 24, and the `verify` job on 22. That is not
+drift: npm 10 — which Node 22 ships — cannot install the dependency graph a
+current `sv create` produces with its add-ons, and fails with
+`Cannot read properties of null (reading 'edgesOut')` on an untouched scaffold.
+It is `sv`'s graph, not ours; the CLI's own `engines` are still what `verify`
+tests on 22.
+
 The integration test re-runs `prettier --write .` after installing. That is not
 papering over a bug: `init` formats what it writes with the *project's* prettier,
 and on a tree that has never been installed there is none to resolve. The normal
