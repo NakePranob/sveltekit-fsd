@@ -34,14 +34,16 @@ responsibility.
 **Not all layers are required.** Most projects can start with only `shared/`,
 `pages/`, and `app/`. Add `features/` and `entities/` only when they provide
 clear value. Do not create empty layer folders "just in case." The `widgets/`
-layer is **discouraged** (see the callout below).
+layer is **discouraged by this guide** (see the callout below) — the spec
+itself has it as an ordinary layer, and cautions only that a UI block which is
+most of a page's content and is never reused should not be one.
 
 FSD uses 6 standardized layers, listed here from highest to lowest:
 
 ```text
 app/       → App initialization, providers, routing
 pages/     → Route-level composition, owns its own logic
-widgets/   → Reusable UI blocks (discouraged, see the callout below)
+widgets/   → Reusable UI blocks (discouraged by this guide, see below)
 features/  → Reusable user interactions (only when used in 2+ places)
 entities/  → Reusable business domain models (only when used in 2+ places)
 shared/    → Infrastructure with no business logic (UI kit, utils, API client)

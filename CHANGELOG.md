@@ -33,6 +33,19 @@ SvelteKit 2.
 
 ### Notes
 
+The generated `docs/fsd.md` leaves `widgets/` closed and says that is **this
+project's** call, not the spec's. FSD v2.1 has `widgets` as an ordinary layer;
+its only caution is that a UI block which is most of a page's content and is
+never reused should not be one. Ported from nextjs-fsd, where attributing the
+closed layer to the spec had made the decision unarguable in a downstream
+project that copied the generated doc into its own AGENTS.md.
+
+The same paragraph now says when "prefer `shared/<domain>/` over a new
+`entities/` slice" stops applying — a business rule landing in the segment, or
+two `pages` slices each keeping their own copy of one API resource. Neither
+signal is a page count.
+
+
 Two settings from the official FSD SvelteKit guide are deliberately not applied:
 `files.lib: 'src'` (it would require moving code the user wrote) and
 `assets: 'public'` (a rename with no FSD content). README says why.

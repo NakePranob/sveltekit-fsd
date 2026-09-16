@@ -193,6 +193,16 @@ hooks, `--errors` an error catalog for the codes its endpoints answer with.
 
 ### `generate slice`
 
+Layers are `features`, `entities` and `widgets`. `pages` slices come from
+`generate page`; `app` and `shared` are written by `init` and `add`.
+
+`init` writes a `docs/fsd.md` that leaves `widgets/` closed and says so as a
+project choice. FSD v2.1 itself has it as an ordinary layer — the spec's only
+caution is that a UI block which is most of a page's content and is never reused
+should not be one. The generator offers `widgets` because the methodology has
+it; prefer `features/` unless you have decided otherwise, and record that
+decision in `docs/fsd.md`.
+
 `ui/` alone is the common case. `model/`, `api/` and `lib/` appear when the
 slice actually has that code — an empty segment folder is noise.
 
