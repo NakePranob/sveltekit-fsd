@@ -192,7 +192,10 @@ check(read(full, "AGENTS.md").includes("Feature-Sliced Design"), "AGENTS.md gain
 // --- nothing a template should never emit -----------------------------------
 for (const file of generatedFiles(full)) {
   const contents = fs.readFileSync(file, "utf8");
-  const relative = path.relative(full, file);
+  // posix, because this is compared against a "/" path below and `path.relative`
+  // hands back backslashes on Windows — where the comparison would silently stop
+  // matching and the exemption would swallow the whole tree instead of one skill.
+  const relative = path.relative(full, file).split(path.sep).join("/");
   // Only the methodology skill is exempt — it is copied byte-for-byte, Vue
   // examples and all. `.agents/skills/sveltekit-fsd/SKILL.md` IS rendered, and
   // skipping the whole `.agents/` tree would have exempted the one generated
@@ -238,7 +241,7 @@ check(!exists(full, "src/app/routes/reports/+page.svelte"), "and extending it do
 // like one it does. So run it. `checkout` has no consumers, which is what
 // fsd/insignificant-slice reports — as a *warning*, because a fresh slice
 // failing CI teaches people to delete the linter rather than the slice.
-const steiger = spawn(full, ["node_modules/.bin/steiger", "./src"]);
+const steiger = spawnBin(full, "steiger", ["./src"]);
 check(steiger.status === 0, `steiger exits 0 on a freshly generated project (got ${steiger.status})`);
 // stderr as well as stdout: steiger prints findings to stderr and still exits 0,
 // so a check that only read stdout would pass against a linter saying nothing.
@@ -254,7 +257,7 @@ const half = makeFixture("half");
 run(half, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"]);
 run(half, ["add", "error-handling", "-y", "--no-install"]);
 check(exists(half, "src/shared/auth/index.ts"), "shared/auth gets a public API from the add that creates it");
-const halfSteiger = spawn(half, ["node_modules/.bin/steiger", "./src"]);
+const halfSteiger = spawnBin(half, "steiger", ["./src"]);
 check(halfSteiger.status === 0, `steiger exits 0 with error handling and no auth (got ${halfSteiger.status})`);
 check(!/✘/.test(halfSteiger.output), `steiger reports no errors on a half-installed project:\n${halfSteiger.output}`);
 
@@ -298,11 +301,23 @@ function fails(dir, args, because) {
   }
 }
 
-/** Both streams, deliberately: steiger prints its findings to stderr and still
- *  exits 0 for a warning, so a check that only read stdout would pass against a
- *  linter that said nothing at all. */
-function spawn(dir, [command, ...args]) {
-  const result = spawnSync(process.execPath, [path.join(dir, command), ...args], {
+/**
+ * Runs a dependency's CLI through node, resolved from its `bin` field rather
+ * than from `node_modules/.bin`.
+ *
+ * `.bin/steiger` is a symlink to the real `.mjs` on unix and a shell shim on
+ * Windows — so handing the `.bin` path to `node` works on one and fails with a
+ * syntax error on the other, which reads as "the linter found problems".
+ *
+ * Both streams, deliberately: steiger prints its findings to stderr and still
+ * exits 0 for a warning, so a check that only read stdout would pass against a
+ * linter that said nothing at all.
+ */
+function spawnBin(dir, pkg, args) {
+  const root = path.join(repo, "node_modules", pkg);
+  const { bin } = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+  const entry = typeof bin === "string" ? bin : bin[pkg];
+  const result = spawnSync(process.execPath, [path.join(root, entry), ...args], {
     cwd: dir,
     encoding: "utf8",
   });
