@@ -1,0 +1,47 @@
+import { resolve } from "$app/paths";
+import type { ResolvedPathname } from "$app/types";
+
+/**
+ * A base that is nowhere: only used so a relative `next` has something to
+ * resolve against. Any `next` that escapes it is an absolute URL.
+ */
+const SENTINEL_ORIGIN = "http://localhost";
+
+/**
+ * Where /login should send someone once they are back in — the `?next=` it was
+ * handed, or the home page.
+ *
+ * **Only ever a same-site path.** An unchecked `next` turns your own login
+ * screen into a redirector to anywhere, wearing your domain in the link (OWASP:
+ * unvalidated redirect, CWE-601).
+ *
+ * The check is the WHATWG URL parser rather than a prefix test, because the
+ * prefix test is the version that gets bypassed: browsers strip tab, CR and LF
+ * out of a URL *before* parsing it, so a path like `/<TAB>/evil.com` starts with
+ * a single slash right up until it becomes `//evil.com` and leaves the site.
+ * Resolving against a sentinel origin asks the same parser the browser will use,
+ * and anything landing on another origin falls back home — a mangled `next` is
+ * not worth blocking a successful sign-in over.
+ */
+export function safeNext(next: string | null | undefined): ResolvedPathname {
+  const home = resolve("/");
+  // We only ever write a pathname into `next`, so anything else is malformed
+  // rather than merely unsafe. The parser below would resolve "evil.com" to a
+  // harmless same-origin /evil.com; there is no reason to follow it.
+  if (!next?.startsWith("/")) return home;
+  try {
+    const url = new URL(next, SENTINEL_ORIGIN);
+    // Escaped the sentinel: absolute, protocol-relative, or another scheme.
+    if (url.origin !== SENTINEL_ORIGIN) return home;
+    // The only cast in this file, and it is what makes `goto()` accept the
+    // result without an eslint escape hatch. `next` is written from
+    // `page.url.pathname`, which SvelteKit already types as ResolvedPathname —
+    // `base` included — so what comes back out is one too. `resolve()` cannot be
+    // used here: it takes a route known at build time, and the whole point of
+    // this value is that it is not.
+    return (url.pathname + url.search + url.hash) as ResolvedPathname;
+  } catch {
+    // new URL throws on syntax no parser accepts (an unterminated IPv6 host).
+    return home;
+  }
+}

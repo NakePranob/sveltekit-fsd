@@ -153,9 +153,22 @@ check(layout.includes("<Providers>") && layout.includes("{@render children()}"),
 check(layout.indexOf("import { Providers }") < layout.indexOf("</script>"), "the Providers import is inside the script block");
 
 check(exists(full, "src/pages/login/ui/login-form.svelte"), "the login form is written");
-check(read(full, "src/shared/auth/require-session.ts").includes("ResolvedPathname"), "safeNext returns a type goto() accepts");
+// The module that calls $effect has to carry the runes filename, or the page it
+// guards throws "$effect is not defined" — on the server, at request time, with
+// svelte-check and the build both green beforehand.
+check(exists(full, "src/shared/auth/require-session.svelte.ts"), "requireSession lives in a module the compiler treats as runes");
+check(!exists(full, "src/shared/auth/require-session.ts"), "and not in a plain .ts, where $effect survives as a bare identifier");
 check(
-  !/goto\(\s*[`'"]/.test(read(full, "src/shared/auth/require-session.ts") + read(full, "src/shared/auth/session.ts")),
+  exists(full, "src/shared/auth/require-session.test.ts") && !exists(full, "src/shared/auth/require-session.svelte.test.ts"),
+  "its test keeps a name `sv add vitest` actually collects — *.svelte.test.ts is excluded from the node project"
+);
+check(
+  exists(full, "src/shared/auth/safe-next.ts"),
+  "safeNext stays in a plain module — pure, unit-tested, and svelte/prefer-svelte-reactivity flags its throwaway URL inside a runes one"
+);
+check(read(full, "src/shared/auth/safe-next.ts").includes("ResolvedPathname"), "safeNext returns a type goto() accepts");
+check(
+  !/goto\(\s*[`'"]/.test(read(full, "src/shared/auth/require-session.svelte.ts") + read(full, "src/shared/auth/session.ts")),
   "no goto() takes a bare string — svelte/no-navigation-without-resolve is an error in a stock SvelteKit project"
 );
 
@@ -290,7 +303,7 @@ fs.appendFileSync(path.join(half, "src/shared/auth/index.ts"), 'export const PRO
 run(half, ["add", "auth", "-y", "--no-install"]);
 const authIndex = read(half, "src/shared/auth/index.ts");
 check(authIndex.includes("PROJECT_OWNED"), "add auth keeps what the project put in shared/auth/index.ts");
-check(authIndex.includes("./access-token") && authIndex.includes("./session") && authIndex.includes("./require-session"),
+check(authIndex.includes("./access-token") && authIndex.includes("./session") && authIndex.includes("./require-session.svelte") && authIndex.includes("./safe-next"),
   "and every export is there afterwards");
 check(authIndex.match(/from "\.\/access-token"/g).length === 1, "without duplicating the line it already had");
 

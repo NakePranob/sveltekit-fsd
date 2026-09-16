@@ -9,7 +9,7 @@
 // TanStack Query API that moved between majors, and read fine to every
 // assertion. This is also the only place a declared dependency range is
 // actually resolved.
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn as spawnProcess, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -94,6 +94,19 @@ run("npm", ["test"]);
 step("vite build");
 run("npm", ["run", "build"]);
 
+// The only check here that runs the code rather than reading it. Everything
+// above — svelte-check, eslint, steiger, vite build — passed against a
+// `requireSession` that called `$effect` from a plain `.ts`, where runes are
+// never compiled and the identifier survives into the output. `$effect` is a
+// declared global, so the types were fine; the page 500s at request time with
+// "$effect is not defined". Nothing static can see that, so this asks the dev
+// server for the pages instead.
+step("render the generated pages — the guarded one included");
+await renderCheck([
+  ["/login", "the login page `add auth` wrote"],
+  ["/dashboard", "a page generated with --auth, whose guard calls $effect"],
+]);
+
 step("lint — prettier --check included, since `add prettier` puts it there");
 run("npm", ["run", "lint"]);
 
@@ -115,3 +128,40 @@ if (!fs.existsSync(path.join(app, "src/entities/loan/ui/loan.svelte"))) {
 }
 
 console.log(`\nintegration: ok\n${app}`);
+
+/** Starts the dev server, asks it for each route, and fails on anything that is
+ *  not a 200 — printing the server's own log, which is where the stack is. */
+async function renderCheck(routes) {
+  const port = 5199;
+  const log = [];
+  const dev = spawnProcess("npm", ["run", "dev", "--", "--port", String(port), "--strictPort"], {
+    cwd: app,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  dev.stdout.on("data", (d) => log.push(String(d)));
+  dev.stderr.on("data", (d) => log.push(String(d)));
+
+  try {
+    const base = `http://localhost:${port}`;
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      try {
+        await fetch(base);
+        break;
+      } catch {
+        if (Date.now() > deadline) throw new Error(`dev server never came up:\n${log.join("")}`);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+
+    for (const [route, what] of routes) {
+      const response = await fetch(base + route);
+      console.log(`  ${route} -> ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`${route} (${what}) rendered ${response.status}, not 200:\n${log.join("")}`);
+      }
+    }
+  } finally {
+    dev.kill("SIGTERM");
+  }
+}

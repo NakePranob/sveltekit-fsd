@@ -256,11 +256,24 @@ export async function addAuth(opts: AddOptions): Promise<void> {
     projectDir,
     [
       { template: "add/auth/session.ts.hbs", output: `${auth}/session.ts` },
-      { template: "add/auth/require-session.ts.hbs", output: `${auth}/require-session.ts` },
+      // `.svelte.ts`, and not as a matter of taste: this module calls `$effect`,
+      // and runes are compiled, not imported. The Svelte compiler only looks
+      // inside `.svelte` components and modules named this way — in a plain
+      // `.ts` the call survives into the output as a bare identifier, so the
+      // page renders `ReferenceError: $effect is not defined` on the server and
+      // dies in the browser. Nothing catches it earlier: `$effect` is a declared
+      // global, so svelte-check is happy and the build emits it unchanged.
+      { template: "add/auth/require-session.ts.hbs", output: `${auth}/require-session.svelte.ts` },
+      { template: "add/auth/safe-next.ts.hbs", output: `${auth}/safe-next.ts` },
       {
         // What it covers is the open-redirect guard on ?next=, which is the one
         // thing here that fails as a security bug rather than a visible one.
         template: "add/auth/require-session.test.ts.hbs",
+        // Deliberately NOT `require-session.svelte.test.ts`, even though that is
+        // the module it covers: `sv add vitest` excludes `*.svelte.{test,spec}`
+        // from the node project, reserving it for browser-environment component
+        // tests. Named that way the open-redirect test would be collected by
+        // nothing and silently never run.
         output: `${auth}/require-session.test.ts`,
         when: () => runner !== undefined,
       },
@@ -283,7 +296,8 @@ export async function addAuth(opts: AddOptions): Promise<void> {
   for (const line of [
     'export { authErrorCatalog, authErrorCatalogs, resolveAuthError } from "./auth-errors";',
     'export { sessionKey, useLogin, useLogout, useSession, type LoginInput, type Session } from "./session";',
-    'export { requireSession, safeNext } from "./require-session";',
+    'export { requireSession } from "./require-session.svelte";',
+    'export { safeNext } from "./safe-next";',
   ]) {
     if (appendExport(projectDir, `${auth}/index.ts`, line) && !written.includes(`${auth}/index.ts`)) {
       written.push(`${auth}/index.ts`);
