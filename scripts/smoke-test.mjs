@@ -101,11 +101,18 @@ const full = makeFixture("full", { vitest: true });
 run(full, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"]);
 run(full, ["add", "auth", "-y", "--no-install"]);
 run(full, ["generate", "page", "dashboard", "--auth", "--title", "Dashboard", "--defaults"]);
+run(full, ["generate", "page", "dashboard", "--api", "--defaults"]);
+run(full, ["generate", "page", "legacy-dashboard", "--model", "--defaults"]);
+run(full, ["generate", "page", "reports", "settings", "--no-route", "--defaults"]);
+run(full, ["generate", "page", "admin/profile", "--root", "src/domain", "--route", "admin/profile", "--defaults"]);
 run(full, ["generate", "layout", "admin", "--guard", "--defaults"]);
-run(full, ["generate", "slice", "features", "checkout", "--segments", "ui,model,api,lib", "--errors"]);
+run(full, ["generate", "slice", "features", "checkout", "--segments", "ui,model,api,lib,config", "--errors"]);
+run(full, ["generate", "slice", "e", "employee/employee-record", "profile", "-s", "ui", "api", "-r", "src/domain", "--defaults"]);
 
 // --- the layout init is responsible for -------------------------------------
 check(exists(full, "src/app/routes/+layout.svelte"), "routes moved into the app layer");
+check(!exists(full, ".claude/settings.json"), "init leaves agent settings alone");
+check(!exists(full, ".claude/hooks"), "init does not install agent lifecycle hooks");
 check(!exists(full, "src/routes"), "the old routes directory is gone");
 check(exists(full, "src/app/index.html"), "app.html moved to the app layer");
 check(exists(full, "src/app/styles/app.css"), "the stylesheet moved to the app layer");
@@ -130,6 +137,7 @@ check(eslintConfig.match(/export default/g).length === 1, "exactly one default e
 const boundary = read(full, "eslint.fsd.js");
 check(!/[`"']\$lib\//.test(boundary), "no boundary pattern pretends $lib is an FSD alias");
 check(boundary.includes("src/app/routes/**"), "the routes tree gets its own block");
+check(boundary.includes("src/**/${layer}/**"), "the boundary also covers nested FSD roots");
 check(
   boundary.indexOf("src/app/**") < boundary.indexOf("src/app/routes/**"),
   "the routes block comes after the app block — flat config keeps the last match, not the union"
@@ -173,6 +181,16 @@ check(
 );
 
 check(exists(full, "src/pages/dashboard/ui/dashboard-page.svelte"), "the page component is written");
+check(exists(full, "src/pages/dashboard/api/dashboard.ts"), "page query hooks are written in the api segment");
+check(!exists(full, "src/pages/dashboard/model/dashboard.ts"), "page query hooks do not masquerade as model code");
+check(exists(full, "src/pages/legacy-dashboard/api/legacy-dashboard.ts"), "the legacy model flag still writes the api segment");
+check(exists(full, "src/pages/reports/ui/reports-page.svelte"), "the first page in a multi-name command is generated");
+check(exists(full, "src/pages/settings/ui/settings-page.svelte"), "the second page in a multi-name command is generated");
+check(exists(full, "src/domain/pages/admin/profile/ui/profile-page.svelte"), "a page can use a grouped custom FSD root");
+check(
+  read(full, "src/app/routes/admin/profile/+page.svelte").includes('from "@/domain/pages/admin/profile"'),
+  "a custom-root page route uses the matching alias"
+);
 check(read(full, "src/app/routes/dashboard/+page.svelte").includes('from "@/pages/dashboard"'), "the route renders the page through its public API");
 check(read(full, "src/pages/dashboard/ui/dashboard-page.svelte").includes("<svelte:head>"), "the page owns its own title");
 check(exists(full, "src/app/layouts/admin-guard.svelte"), "the layout guard is written");
@@ -182,6 +200,24 @@ check(exists(full, "src/features/checkout/model/checkout.svelte.ts"), "a model s
 check(
   read(full, "src/features/checkout/index.ts").includes('from "./model/checkout.svelte"'),
   "and is imported without the .ts"
+);
+check(exists(full, "src/features/checkout/config/checkout.ts"), "a config segment is generated when requested");
+check(
+  read(full, "src/features/checkout/index.ts").includes('from "./config/checkout"'),
+  "and config is exported through the slice public API"
+);
+check(
+  exists(full, "src/domain/entities/employee/employee-record/ui/employee-record.svelte"),
+  "a grouped slice is nested below its group"
+);
+check(exists(full, "src/domain/entities/profile/api/profile.ts"), "multiple slices can use the same segments and custom root");
+check(
+  fails(full, ["generate", "slice", "features", "unsafe", "--segments", "ui", "--root", "../outside", "--defaults"], "--root must stay inside"),
+  "a root cannot escape the project"
+);
+check(
+  fails(full, ["generate", "slice", "features", "unsafe", "--segments", "ui", "--root", "src/lib", "--defaults"], "SvelteKit's own $lib"),
+  "a root cannot take over SvelteKit's own $lib"
 );
 check(/createQuery<[^>]*>\(\(\) => \(\{/.test(read(full, "src/features/checkout/api/checkout.ts")), "query options are a function, so they stay reactive");
 
@@ -201,6 +237,14 @@ check(
   "the methodology skill is copied verbatim — Handlebars would have eaten this Vue example"
 );
 check(read(full, "AGENTS.md").includes("Feature-Sliced Design"), "AGENTS.md gained the FSD section");
+const fsdGuide = read(full, "docs/fsd.md");
+check(fsdGuide.includes("entities/<name>/api"), "the generated guide puts reusable domain requests in entities/api");
+check(fsdGuide.includes("AGENTS.md") && /does not install lifecycle\s+hooks/.test(fsdGuide), "the generated guide documents portable agent guidance");
+check(!fsdGuide.includes("shared/<domain>/` is usually the honest home"), "the generated guide keeps domain meaning out of shared");
+check(
+  !read(full, ".agents/skills/sveltekit-fsd/SKILL.md").includes("shared/<domain>/"),
+  "the generated CLI skill keeps domain meaning out of shared"
+);
 // init leaves `kit.files.lib` alone, and every doc it writes has to say so. These
 // four once told agents `$lib` and `@/` were one tree, which sends them to write
 // `$lib/shared/...` imports that resolve nowhere.
@@ -327,6 +371,7 @@ check(!exists(owned, "sveltekit-fsd.config.json"), "and writes nothing");
 console.log("smoke: minimal project (no eslint, no tailwind, no vitest)");
 const min = makeFixture("min", { eslint: false, tailwind: false });
 const minOut = run(min, ["init", "--locale", "th", "--no-install", "--no-hooks", "--defaults"]);
+check(!exists(min, ".claude/settings.json"), "agent settings stay untouched");
 check(!exists(min, "src/app/styles/app.css"), "no stylesheet is written for a project with no Tailwind");
 check(/no Tailwind/.test(minOut), "and init says why, since the generated markup is Tailwind classes");
 check(/no flat ESLint config found/.test(minOut), "init says what to do about a project with no ESLint");

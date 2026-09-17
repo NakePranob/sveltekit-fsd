@@ -102,9 +102,26 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
           message: "Language for the generated user-facing copy?",
           choices: [
             { name: "Thai", value: "th" },
-            { name: "English", value: "en" },
-          ],
-        })) as Locale));
+          { name: "English", value: "en" },
+        ],
+      })) as Locale));
+
+  const install =
+    opts.install ??
+    (opts.defaults
+      ? true
+      : await confirm({
+          message: `Install the generated dependencies with ${packageManager}?`,
+          default: true,
+        }));
+  const hooks =
+    opts.hooks ??
+    (opts.defaults
+      ? true
+      : await confirm({
+          message: "Install the Conventional Commit git hook?",
+          default: true,
+        }));
 
   // Read from the layout that is about to move, not from a guessed filename:
   // `sv add tailwindcss` has written src/app.css and src/routes/layout.css in
@@ -155,7 +172,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
       `add steiger + the FSD plugin and a steiger.config.ts for the whole-tree checks ESLint cannot make, then chain both into the lint script`,
       `add ${pc.cyan("components.json")} so \`shadcn-svelte add\` writes into ${srcDir}/shared/ui`,
       `write ${pc.cyan("docs/fsd.md")}, a ${pc.cyan(".agents/skills/sveltekit-fsd")} and a ${pc.cyan(".agents/skills/feature-sliced-design")} skill at the repository root (symlinked from ${pc.cyan(".claude/skills/")}), and point AGENTS.md at them`,
-      opts.hooks === false
+      hooks === false
         ? pc.dim("write no git hook (--no-hooks)")
         : `write a ${pc.cyan("commit-msg")} hook that checks the subject is a Conventional Commit — shape only, your language and emoji rules stay yours — and point ${pc.cyan("core.hooksPath")} at it`,
     ]) {
@@ -289,7 +306,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   }
 
   const hook =
-    opts.hooks === false ? undefined : installCommitHook(projectDir, renderTemplate("init/commit-msg.hbs", context));
+    hooks === false ? undefined : installCommitHook(projectDir, renderTemplate("init/commit-msg.hbs", context));
   const agentDocs = writeAgentDocs(projectDir, { ...context, huskyOwnsHooks: hook?.huskyOwnsHooks ?? false }, hook);
   written.push(...agentDocs.written);
   if (hook?.status === "installed") written.push(`${hook.file} (+ core.hooksPath)`);
@@ -372,7 +389,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     );
   }
 
-  if (added.length > 0 && opts.install !== false) {
+  if (added.length > 0 && install) {
     installDependencies(projectDir, packageManager);
   } else if (added.length > 0) {
     console.log(pc.yellow(`\nrun \`${packageManager} install\` to install: ${added.join(", ")}`));

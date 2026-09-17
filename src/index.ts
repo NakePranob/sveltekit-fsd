@@ -4,7 +4,7 @@ import pc from "picocolors";
 
 import { NO_TTY_MESSAGE, select } from "./prompts";
 import { initProject } from "./commands/init";
-import { generateLayout, generatePage, generateSlice } from "./commands/generate";
+import { generateLayout, generatePage, generatePages, generateSlice, generateSlices } from "./commands/generate";
 import { addAuth, addErrorHandling, addPrettier } from "./commands/add";
 import { setProjectLocale, showProjectConfig } from "./commands/config";
 import { isProjectDir, readConfig } from "./utils/config";
@@ -34,7 +34,7 @@ program
     "Keep a SvelteKit project on Feature-Sliced Design.\n\n" +
       "SvelteKit creates the app (`sv create`); this only shapes what is inside it: `init` once — which moves routing " +
       "into the FSD app layer — then `generate` for slices and `add` for the API error handling, auth wiring and formatting.\n\n" +
-      "Run `sveltekit-fsd` with no arguments to pick what to do from a menu. Commands ask for whatever you omit; " +
+      "Run `sveltekit-fsd` or `sveltekit-fsd wizard` to pick what to do from a menu. Commands ask for whatever you omit; " +
       "`--defaults` answers every question for CI."
   )
   .version(cliVersion());
@@ -47,7 +47,13 @@ program
   .option("--no-hooks", "write no commit-msg hook and leave core.hooksPath alone")
   .option("--defaults", "skip every question; Thai copy, and no confirmation")
   .option("-y, --yes", "skip only the confirmation summary")
-  .action(async (opts: { locale?: string; install?: boolean; hooks?: boolean; defaults?: boolean; yes?: boolean }) => {
+  .action(async (opts: {
+    locale?: string;
+    install?: boolean;
+    hooks?: boolean;
+    defaults?: boolean;
+    yes?: boolean;
+  }) => {
     try {
       await initProject(process.cwd(), {
         locale: parseLocale(opts.locale),
@@ -88,9 +94,9 @@ const generate = program
   });
 
 generate
-  .command("page [name]")
+  .command("page [name...]")
   .alias("p")
-  .description("scaffold a pages slice and the thin route file that renders it")
+  .description("scaffold one or more pages slices and their thin route files")
   .option("--title <title>", "heading and browser title; defaults to the Title Case of the page name")
   .option(
     "--route <path>",
@@ -98,21 +104,25 @@ generate
   )
   .option("--no-route", "write the slice only, no route file")
   .option("--auth", "the page sits behind requireSession (needs `add auth`)")
-  .option("--model", "add model/<name>.ts, this page's TanStack Query hooks (needs `add error-handling`)")
+  .option("--api", "add api/<name>.ts, this page's TanStack Query hooks (needs `add error-handling`)")
+  .option("--model", "legacy alias for --api; add api/<name>.ts (needs `add error-handling`)")
   .option("--errors", "add model/<name>-errors.ts, this page's own error catalog (needs `add error-handling`)")
+  .option("-r, --root <path>", "FSD root for the pages layer; defaults to the project's configured srcDir")
   .option("--defaults", "skip every question; no guard, route = the page name")
-  .action(async (name, opts) => {
+  .action(async (names, opts) => {
     try {
       // commander folds --no-route into the same `route` key: false when it was
       // passed, a string when --route was, undefined when neither.
       const noRoute = opts.route === false;
-      await generatePage(name, {
+      await generatePages(names, {
         title: opts.title,
         route: noRoute ? undefined : opts.route,
         routeFile: noRoute ? false : undefined,
         auth: opts.auth,
+        api: opts.api,
         model: opts.model,
         errors: opts.errors,
+        root: opts.root,
         defaults: opts.defaults,
       });
     } catch (err) {
@@ -121,17 +131,19 @@ generate
   });
 
 generate
-  .command("slice [layer] [name]")
+  .command("slice [layer] [name...]")
   .alias("s")
-  .description("scaffold a features/entities/widgets slice with only the segments it needs")
-  .option("--segments <list>", "comma-separated: ui,model,api,lib (default ui)")
+  .description("scaffold one or more features/entities/widgets slices with only the segments they need")
+  .option("-s, --segments <list...>", "space- or comma-separated: ui,model,api,lib,config (default ui)")
+  .option("-r, --root <path>", "FSD root for the layers; defaults to the project's configured srcDir")
   .option("--errors", "add model/<name>-errors.ts, this slice's own error catalog (needs `add error-handling`)")
   .option("--defaults", "skip every question; ui segment only")
-  .action(async (layer, name, opts) => {
+  .action(async (layer, names, opts) => {
     try {
-      await generateSlice(layer, name, {
+      await generateSlices(layer, names, {
         segments: opts.segments,
         errors: opts.errors,
+        root: opts.root,
         defaults: opts.defaults,
       });
     } catch (err) {
@@ -310,6 +322,18 @@ async function runTopMenu(): Promise<void> {
   else if (target === "add") await runAddWizard();
   else showProjectConfig();
 }
+
+program
+  .command("wizard")
+  .alias("menu")
+  .description("open the interactive menu for init, generate, add and config")
+  .action(async () => {
+    try {
+      await runTopMenu();
+    } catch (err) {
+      fail(err);
+    }
+  });
 
 if (process.argv.length <= 2) {
   runTopMenu().catch(fail);

@@ -25,9 +25,12 @@ const SLICED = ["pages", "widgets", "features", "entities"];
 
 // One spelling, deliberately. `kit.files.lib` is left at its default, so `$lib`
 // still means {{srcDir}}/lib — SvelteKit's own directory, which is not a layer
-// and which `init` does not touch. The FSD tree is reached through `{{alias}}/`
-// and nothing else, so there is no second prefix for these patterns to cover.
-const forEachPrefix = (suffix) => [`{{alias}}/${suffix}`];
+// and which `init` does not touch. FSD trees are reached through `{{alias}}/`,
+// with an optional nested root path, so the patterns below cover both forms.
+// The first pattern covers the configured root. The second covers an
+// additional FSD root nested below it, which is what `generate ... --root`
+// creates when a project keeps more than one independently owned layer tree.
+const forEachPrefix = (suffix) => [`{{alias}}/${suffix}`, `{{alias}}/**/${suffix}`];
 
 /**
  * Anything below a slice's own directory, from anywhere.
@@ -37,8 +40,12 @@ const forEachPrefix = (suffix) => [`{{alias}}/${suffix}`];
  * includes a file reaching into its OWN slice through the alias — inside a slice
  * the import is relative, which is what keeps a slice movable.
  */
+const FSD_SEGMENTS = ["ui", "api", "model", "lib", "config"];
+
 const insideSlice = {
-  group: SLICED.flatMap((layer) => forEachPrefix(`${layer}/*/**`)),
+  group: SLICED.flatMap((layer) =>
+    FSD_SEGMENTS.flatMap((segment) => forEachPrefix(`${layer}/**/${segment}/**`))
+  ),
   message: 'reaches inside a slice — import it through its index.ts, e.g. "{{alias}}/features/<slice>".',
 };
 
@@ -72,14 +79,17 @@ const layerRules = LAYERS.map((layer) => {
 
   if (SLICED.includes(layer)) {
     patterns.push({
-      group: forEachPrefix(`${layer}/*`),
+      group: forEachPrefix(`${layer}/**`),
       message:
         "two slices on the same layer never import each other. Move the shared code down a layer, " +
         "or use a relative path if it really belongs to this slice.",
     });
   }
 
-  return boundaryFor([`{{srcDir}}/${layer}/**/*.{ts,js,svelte}`], patterns);
+  return boundaryFor(
+    [`{{srcDir}}/${layer}/**/*.{ts,js,svelte}`, `{{srcDir}}/**/${layer}/**/*.{ts,js,svelte}`],
+    patterns
+  );
 });
 
 const fsdBoundary = [

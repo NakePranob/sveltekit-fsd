@@ -4,6 +4,22 @@ All notable changes to @nakedev/sveltekit-fsd are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.3
+
+### Added
+
+- An interactive `wizard` menu for choosing `init`, `generate`, `add`, or config.
+- Guided prompts for init options and page or layout route choices.
+- FSD CLI ergonomics for multiple names, slice groups, custom roots, and the
+  `--api` page query hook flag.
+
+### Changed
+
+- Page query hooks are generated under `api/`, with `--model` retained as a
+  compatibility alias.
+- `init` leaves agent settings alone and relies on `AGENTS.md` and skills for
+  project guidance; it no longer installs agent lifecycle hooks.
+
 ## 0.1.2
 
 ### Changed
