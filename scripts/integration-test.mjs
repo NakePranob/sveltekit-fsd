@@ -49,11 +49,18 @@ step("sveltekit-fsd init / add / generate");
 run(process.execPath, [cli, "init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"]);
 run(process.execPath, [cli, "add", "auth", "-y", "--no-install"]);
 run(process.execPath, [cli, "generate", "page", "dashboard", "--auth", "--title", "Dashboard", "--defaults"]);
+run(process.execPath, [cli, "generate", "page", "reports", "settings", "--no-route", "--defaults"]);
+run(process.execPath, [cli, "generate", "page", "admin/profile", "--root", "src/domain", "--route", "admin/profile", "--defaults"]);
 run(process.execPath, [cli, "generate", "layout", "admin", "--guard", "--defaults"]);
-run(process.execPath, [cli, "generate", "slice", "features", "checkout", "--segments", "ui,model,api,lib", "--errors"]);
+run(process.execPath, [cli, "generate", "slice", "features", "checkout", "--segments", "ui,model,api,lib,config", "--errors"]);
+run(process.execPath, [cli, "generate", "slice", "e", "employee/employee-record", "profile", "-s", "ui", "api", "-r", "src/domain", "--defaults"]);
 
 step("install");
 run("npm", ["install"]);
+
+if (fs.existsSync(path.join(app, ".claude/settings.json")) || fs.existsSync(path.join(app, ".claude/hooks"))) {
+  throw new Error("init installed an agent lifecycle hook or modified agent settings");
+}
 
 // Re-run the formatter pass the CLI could not do before node_modules existed.
 // `init` formats what it writes with the project's own prettier, and on a fresh

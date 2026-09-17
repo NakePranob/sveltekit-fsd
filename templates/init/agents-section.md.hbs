@@ -13,6 +13,9 @@ Rules that are easy to break without noticing:
 - imports point downwards only, and a slice is imported through its `index.ts`
 - `$lib/` is SvelteKit's own `{{srcDir}}/lib/`, not a layer — `kit.files.lib` is left at its default. Shared code goes in `{{srcDir}}/shared/` and is imported as `{{alias}}/shared/...`, the only spelling the boundary rules know
 - `{{routesDir}}/<route>/+page.svelte` renders an FSD page and nothing else; the title travels with the component in its own `<svelte:head>`
+- page-specific requests and TanStack Query hooks live in a page slice's `api/`; `model/` is for state, schemas, and business logic
+- reusable domain requests belong in `entities/<name>/api/`, reusable user actions in `features/<name>/api/`, and generic client or CRUD primitives in `shared/api/`
+- `generate page|slice` accepts multiple names, slice groups such as `employee/employee-record`, and `--root` for another FSD root inside `{{srcDir}}`; `{{srcDir}}/lib/` remains SvelteKit's `$lib`
 - a module using runes must be named `*.svelte.ts`, and be imported without the `.ts` — rename it to a plain `.ts` and `$state` silently becomes an undefined function
 - `createQuery` / `createMutation` / `useQueryClient` are called during component initialisation, never from an event handler — they read Svelte context
 - `{{lintCommand}}` runs both linters: ESLint (`eslint.fsd.js`) flags a wrong-way or slice-internal import per file as you type, steiger (`steiger.config.ts`) flags the same imports plus what one file cannot show — a slice with no consumers, a layer sliced too finely
@@ -23,6 +26,10 @@ Two agent skills sit in the repository root, both symlinked from `.claude/skills
 - `.agents/skills/sveltekit-fsd/` — driving the generator in this repo
 - `.agents/skills/feature-sliced-design/` — the FSD methodology itself, for the
   "should this be an entity at all" questions
+
+The skills and `AGENTS.md` are the complete agent guidance for this project.
+The CLI does not install lifecycle hooks or modify agent settings; lint, Steiger,
+tests, and CI enforce the rules.
 
 `docs/fsd.md` is the source of truth if any of them disagree.
 

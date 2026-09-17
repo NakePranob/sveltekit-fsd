@@ -97,11 +97,12 @@ npm run lint                       # eslint (import boundary) + steiger (whole t
 ## Commands
 
 ```bash
-sveltekit-fsd                                  # menu: generate / add / show config
+sveltekit-fsd                                  # interactive menu
+sveltekit-fsd wizard                            # same menu, explicit form
 sveltekit-fsd init [--locale th|en] [--no-install] [--no-hooks] [--defaults]
 
-sveltekit-fsd generate page <name> [--title <t>] [--route <path>] [--no-route] [--auth] [--model] [--errors]
-sveltekit-fsd generate slice <features|entities|widgets> <name> [--segments ui,model,api,lib] [--errors]
+sveltekit-fsd generate page <name...> [--title <t>] [--route <path>] [--no-route] [--auth] [--api] [--errors] [-r <root>]
+sveltekit-fsd generate slice <features|entities|widgets> <name...> [-s <segments...>] [-r <root>] [--errors]
 sveltekit-fsd generate layout <name> [--route <path>] [--no-route] [--guard]
 
 sveltekit-fsd add error-handling [-y] [--no-install]
@@ -112,9 +113,14 @@ sveltekit-fsd config show
 sveltekit-fsd config set locale th|en
 ```
 
-Every command prompts for what you leave out and takes what you pass as final.
-`--defaults` answers everything, which is what CI and agents need — a prompt in a
-non-interactive shell exits 1 without writing anything.
+Run `sveltekit-fsd` or `sveltekit-fsd wizard` if you do not know which command to
+use. The menu guides you to `init`, `generate`, `add`, or project config, and the
+next questions ask for names, layers, segments, routes, auth, API hooks, and
+error catalogs. You can also run a subcommand with only the values you know; the
+missing values open prompts in an interactive terminal.
+
+`--defaults` answers every remaining question, which is what CI and agents need
+— a prompt in a non-interactive shell exits 1 without writing anything.
 
 Prompts also disappear when they cannot apply: `--auth` is refused until `add
 auth` has run, and the error-catalog question is not asked at all without `add
@@ -123,6 +129,10 @@ error-handling`.
 ### `init`
 
 The one command that rearranges a project you already have:
+
+In an interactive terminal, `init` asks whether to install dependencies and
+whether to add the Conventional Commit hook. `--no-install` and `--no-hooks`
+remain available for scripts and CI.
 
 | | before | after |
 |---|---|---|
@@ -150,9 +160,10 @@ It also adds:
   [Why two linters](docs/design-notes.md#two-linters-on-purpose).
 - `components.json` so `shadcn-svelte add` writes into `src/shared/ui`.
 - `docs/fsd.md` — the convention, in this project's own words.
-- Two agent skills at the repository root, symlinked from `.claude/skills/`:
-  `sveltekit-fsd` (driving this CLI) and `feature-sliced-design` (the FSD v2.1
-  methodology itself).
+- `AGENTS.md` and two agent skills at the repository root. Codex can load the
+  project guidance from `AGENTS.md`; Claude Code can use the skills through the
+  `.claude/skills/` symlinks. The CLI does not install agent lifecycle hooks or
+  modify agent settings.
 - A `commit-msg` hook that checks the subject is a Conventional Commit — shape
   only; your language and emoji rules stay yours.
 
@@ -161,8 +172,8 @@ end, rather than the whole command refusing over one file.
 
 ### `generate page`
 
-Writes `src/pages/<name>/` — the component and its `index.ts` public API — plus
-the route file that renders it:
+Writes one or more pages slices under the configured FSD root — the component
+and its `index.ts` public API — plus the route files that render them:
 
 ```svelte
 <!-- src/app/routes/dashboard/+page.svelte -->
@@ -179,8 +190,15 @@ so the title travels with the component.
 `--route` takes SvelteKit's own segment forms: `(admin)/dashboard`, `loans/[id]`,
 `docs/[...slug]`, `[[lang]]/home`, `loans/[id=integer]`.
 
-`--auth` puts the page behind `requireSession()`. `--model` adds TanStack Query
-hooks, `--errors` an error catalog for the codes its endpoints answer with.
+Names may include a slice group, such as `admin/dashboard`, and `--root` may
+choose another FSD root inside `src/` (for example `src/domain`). The SvelteKit
+`src/lib/` directory remains reserved for `$lib`. Multiple page names use their
+name as their route; pass `--route` only when generating one page.
+
+`--auth` puts the page behind `requireSession()`. `--api` adds the page's
+TanStack Query hooks under `api/<name>.ts`, while `--errors` adds an error
+catalog for the codes its endpoints answer with. The old `--model` flag remains
+as a compatibility alias for `--api`.
 
 ### `generate slice`
 
@@ -189,9 +207,23 @@ Layers are `features`, `entities` and `widgets`. `pages` slices come from
 `features/` — [`widgets/` is closed by project
 choice](docs/design-notes.md#why-widgets-is-closed-by-project-choice).
 
-`ui/` alone is the common case. `model/`, `api/` and `lib/` appear when the slice
-actually has that code. A `model/` segment is written as `<name>.svelte.ts`, and
+`ui/` alone is the common case. `model/`, `api/`, `lib/` and `config/` appear when
+the slice actually has that code. A `model/` segment is written as `<name>.svelte.ts`, and
 that [is not a style choice](docs/design-notes.md#why-a-model-segment-is-a-runes-module).
+Page-specific requests stay in `pages/<name>/api/`; reusable domain requests
+move to `entities/<name>/api/`, reusable actions to `features/<name>/api/`, and
+generic CRUD primitives to `shared/api/`.
+
+The command accepts multiple slice names, comma-separated or as separate
+arguments, and supports slice groups such as `employee/employee-record`:
+
+```bash
+sveltekit-fsd generate slice entities user profile -s ui api
+sveltekit-fsd generate slice features employee/employee-record -s ui -r src/domain
+```
+
+`-s` is the short form of `--segments`; both comma-separated and space-separated
+segments work. `-r` is the short form of `--root`.
 
 ### `generate layout`
 

@@ -249,7 +249,14 @@ export async function addAuth(opts: AddOptions): Promise<void> {
   );
 
   const runner = testRunner(projectDir, config);
-  const context = { ...errorContext(config), testRunner: runner, name: "login", pascal: "Login" };
+  const context = {
+    ...errorContext(config),
+    testRunner: runner,
+    name: "login",
+    directory: "login",
+    pageAlias: config.alias,
+    pascal: "Login",
+  };
   const auth = `${config.srcDir}/shared/auth`;
   const slice = `${config.srcDir}/pages/login`;
   const written = await applyTemplates(

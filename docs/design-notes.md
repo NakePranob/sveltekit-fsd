@@ -50,6 +50,37 @@ in `.svelte` components and in modules named `*.svelte.ts`. Rename one to a plai
 `.ts` and `$state` becomes an undefined function at runtime, with nothing failing
 at build time to tell you.
 
+## Why page query hooks go in `api/`
+
+`generate page --api` creates a file containing TanStack Query hooks and calls
+the backend through the shared API client. That is an API integration, so it
+belongs in `pages/<name>/api/`. The old `--model` flag remains as a CLI
+compatibility alias. The page's `model/` remains available for frontend state,
+schemas, validation, and business logic. When the request is reused by several
+pages, move it to `entities/<name>/api/` when it belongs to a reusable business
+resource, or to `features/<name>/api/` when it belongs to a reusable user action.
+Keep generic transport and CRUD primitives in `shared/api/`.
+
+## CLI ergonomics that follow the official FSD CLI
+
+The official [Feature-Sliced CLI](https://github.com/feature-sliced/cli) accepts
+multiple names, short flags, slice groups, and an explicit `--root`. This CLI
+supports the same conveniences while keeping SvelteKit's project rules intact:
+
+- `generate page dashboard settings` creates both page slices and uses each
+  name as its route
+- `generate slice entities user profile -s ui api` accepts multiple names and
+  space-separated segments; comma-separated values still work
+- `employee/employee-record` creates a slice group directory while using
+  `employee-record` for generated files and identifiers
+- `--root src/domain` creates an additional FSD root under `src/` and adjusts
+  generated imports; `src/lib/` stays reserved for SvelteKit's `$lib`
+
+`--route` remains single-page only because one route value cannot describe
+several pages safely. `app` and `shared` remain owned by `init` and `add`, so
+the ergonomics additions do not create infrastructure layers with incomplete
+configuration.
+
 ## Why `widgets/` is closed by project choice
 
 The `docs/fsd.md` that `init` writes leaves `widgets/` closed and says so as a
@@ -60,6 +91,18 @@ page's content and is never reused should not be one.
 `generate slice` offers `widgets` because the methodology has it. Prefer
 `features/` unless you have decided otherwise, and record that decision in
 `docs/fsd.md`.
+
+## Why init does not install agent lifecycle hooks
+
+`AGENTS.md` and the two generated skills already provide the project guidance
+without changing an agent's settings. Codex reads `AGENTS.md` before working,
+while Claude Code can use the same skills through `.claude/skills/`.
+
+Lifecycle hooks belong to an agent's own configuration and can require review,
+trust, or project-specific merging. Installing one from `init` would add a
+runtime side effect that is unnecessary for the FSD contract, so the CLI leaves
+agent hook configuration to the project owner. ESLint, Steiger, tests, and CI
+remain the enforcement layer.
 
 ## The two rules in `add error-handling` that get the only generated test
 

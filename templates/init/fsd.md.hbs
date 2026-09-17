@@ -63,36 +63,43 @@ is already a feature, so the widget/feature boundary would be one more decision
 per screen buying nothing. Reach for `features/` first. Reopen it by deleting
 this paragraph, not by asking the spec's permission.
 
-When the second consumer does appear and what it shares is *data* — the types
-and query hooks for one domain — `shared/<domain>/` is usually the honest home:
-`shared/auth`, one file per capability. It bends "shared is infrastructure" a
-little, and it buys not paying for a layer whose whole promise is a third
-consumer that may never arrive. A `features/` slice is for a user *action* two
-pages perform, which is a different thing.
+When reuse becomes real, choose the owner by meaning:
 
-**Two signals say that advice has run out.** Neither is a page count — a
-`shared/` segment read by three pages can be perfectly correct.
+- a generic client, transport wrapper, or authentication plumbing →
+  `shared/api` or `shared/auth`
+- a reusable business resource and its entity-related requests →
+  `entities/<name>/api` and `entities/<name>/model`
+- a reusable user action → `features/<name>/api` and `features/<name>/model`
+- a request used by one page → `pages/<name>/api`
 
-The first is a **business rule landing in the segment**. Types and query hooks
-are plumbing; a calculation, a format or a constraint that is *about* the
-business is not, and `shared/` is defined as the layer with no business meaning.
-When one shows up, the segment has become an entity and is only filed under
-`shared/`.
+Generic CRUD primitives can stay in `shared/api`. A domain-specific request
+should not be put in `shared/<domain>` just to avoid creating an entity; if its
+owner is still unclear, keep it in the consuming page until the boundary is
+stable.
 
-The second is more expensive and quieter: **two `pages` slices each writing
-their own copy** of the same API resource. They cannot import each other, so
-nothing makes the two agree — not review, not the compiler. Expect the type in
-one to be missing fields the other has, both to sit on the same cache key with
-one of them writing it as a bare string, and each to invalidate its own list and
-not the other's. That is not the cheap duplication this document argues for
-elsewhere; the cheap kind is one a compiler or a reader can see. Move it below
-both, and let the question of which lower layer be settled by the paragraph
-above.
+**Two signals say that code should move below the consuming page.** Neither is
+a page count — a shared API client read by three pages can be perfectly correct.
+
+The first is a **business rule landing in `shared/`**. Shared is the layer with
+no business meaning, so move that rule to the owning entity, feature, page, or
+app composition.
+
+The second is **two `pages` slices each writing their own copy** of the same API
+resource. They cannot import each other, so nothing makes the two agree — not
+review, not the compiler. Move the request to the owning entity or feature, or
+keep a genuinely generic CRUD primitive in `shared/api`.
 
 The full methodology is in the `feature-sliced-design` skill `init` wrote at
 `.agents/skills/feature-sliced-design/` — layer definitions, the `@x`
 cross-import pattern, when an entity earns its keep, and asset placement. This
 file is only how it lands in *this* repo.
+
+## Agent startup context
+
+`AGENTS.md` and the two skills above are the portable source of agent guidance.
+Codex reads `AGENTS.md` before working in the project, and Claude Code can use
+the same skills through `.claude/skills/`. The CLI does not install lifecycle
+hooks or modify agent settings; lint and CI remain the enforcement layer.
 
 ## Import boundary
 
@@ -171,22 +178,36 @@ belongs in a slice.
 ## Segments
 
 A slice gets only the segments it has code for. `ui/` alone is the common case;
-add `model/` (state), `api/` (requests) or `lib/` (helpers) when that slice
-actually has them. An empty segment folder is noise.
+add `model/` (state), `api/` (requests), `lib/` (helpers) or `config/` (slice
+settings) when that slice actually has them. An empty segment folder is noise.
 
 Adding one later is the normal path, not a rewrite — re-run the same command with
 the extra segment and it writes only what is missing, appending the new exports
 to the slice's `index.ts` and leaving every existing file untouched:
 
 ```bash
-sveltekit-fsd generate slice features checkout --segments ui        # ui/ only
-sveltekit-fsd generate slice features checkout --segments ui,model  # adds model/
+sveltekit-fsd generate slice features checkout --segments ui               # ui/ only
+sveltekit-fsd generate slice features checkout --segments ui,model,config  # adds model/ and config/
 ```
+
+Generate several slices in one command with space-separated or comma-separated
+names. A slash in a name creates a slice group, while the final part remains the
+slice name used for files and identifiers:
+
+```bash
+sveltekit-fsd generate slice entities user profile --segments ui,api
+sveltekit-fsd generate slice features employee/employee-record --segments ui --root src/domain
+```
+
+`--root` is for another FSD root inside `{{srcDir}}`; `{{srcDir}}/lib/` remains
+SvelteKit's own `$lib` directory. Multiple pages use their names as routes. Use
+`--route` when generating one page whose route differs from its name.
 
 ```text
 {{srcDir}}/pages/<page>/
 ├── ui/<page>-page.svelte     # the page, with its own <svelte:head>
-├── model/<page>.svelte.ts    # runes — see the filename rule below
+├── api/<page>.ts             # page-specific requests and query hooks
+├── model/                     # optional state, schemas, and business logic
 └── index.ts                  # public API — the only thing a route imports
 ```
 
@@ -289,7 +310,7 @@ sveltekit-fsd add auth                        # shared/auth: session, guard, log
 ```
 
 Re-running a generate command extends what is there instead of refusing, so
-`--errors` or `--model` on a page built bare earlier just adds the file. It never
+`--errors` or `--api` on a page built bare earlier just adds the file. It never
 rewrites one you already have — and it will not add a second route file for a
 page that is already routed from somewhere else.
 
