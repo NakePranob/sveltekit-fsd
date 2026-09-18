@@ -4,6 +4,12 @@ All notable changes to @nakedev/sveltekit-fsd are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.1.5
+
+### Fixed
+
+- Correct the release tag validation used by the automatic publish workflow.
+
 ## 0.1.4
 
 ### Changed
