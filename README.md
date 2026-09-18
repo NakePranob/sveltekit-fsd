@@ -314,9 +314,12 @@ npm version patch --no-git-tag-version
 npm run verify
 ```
 
-After the version change is merged, create an annotated `vX.Y.Z` tag on that
-`main` commit. The release workflow verifies that the tag matches
-`package.json` before publishing.
+After the version change is merged, the release workflow runs the same verify
+and integration gates, creates an annotated `vX.Y.Z` tag on that `main` commit,
+and publishes the matching package to npm. It also creates the GitHub Release.
+If a publish needs a retry, run the `release` workflow manually and provide the
+existing tag; it will verify the tag again and skip an npm version that is
+already published.
 
 ## License
 

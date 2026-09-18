@@ -209,8 +209,9 @@ It also refuses a Thai subject, and lets a bare version through.
   subject, description in English.
 - Nothing publishes without a `v*.*.*` tag pointing at a matching
   `package.json` — `scripts/check-release.mjs` refuses anything else (annotated
-  tag, at HEAD, clean tree, `files` carrying dist/templates/bin), and
-  `release.yml` triggers on nothing but that tag. Pushing a branch is safe.
+  tag, at HEAD, clean tree, `files` carrying dist/templates/bin). After a
+  version-bumped PR merges, `release.yml` runs the gates, creates that tag, and
+  publishes automatically. Pushing a branch is safe.
 
 ## The first release is the awkward one
 
@@ -226,9 +227,10 @@ npm publish --access public        # prepublishOnly runs release:check + verify
 
 Then, on npmjs.com, add a trusted publisher for the package —
 `NakePranob/sveltekit-fsd`, workflow `release.yml`, environment `npm-release` —
-and every release after that is `git push origin vX.Y.Z` and nothing else. The
-publish step skips a version that is already on the registry, so pushing the
-v0.1.0 tag after that manual publish is harmless rather than a red run.
+and every release after that is a version-bumped merge into `main`. The
+workflow creates the annotated tag and publishes it. A manual run with an
+existing tag is available when a registry or workflow failure needs a retry;
+the publish step skips a version that is already on the registry.
 
 No token is stored anywhere. `id-token: write` plus the trusted publisher is the
 whole credential, which is why `registry-url` must stay out of `setup-node` — it
