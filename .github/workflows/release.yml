@@ -1,22 +1,20 @@
 name: release
 
 on:
-  # Git is the release source of truth. A package can only be published from an
-  # explicitly pushed vX.Y.Z tag that points at the matching package.json.
+  # A merge into main is the release input. The workflow creates the matching
+  # annotated tag after the release gates pass, then publishes from that tag.
   push:
-    tags:
-      - "v*.*.*"
-  # Lets a failed publish be retried (a misconfigured trusted publisher, a
-  # registry outage) without inventing another commit or tag.
+    branches: [main]
+  # Lets a failed publish be retried without inventing another commit or tag.
   workflow_dispatch:
     inputs:
       tag:
         description: "Existing release tag to publish, for example v0.1.0"
-        required: true
+        required: false
         type: string
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref_name }}
+  group: release-${{ inputs.tag || github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -24,20 +22,24 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm-release
     permissions:
-      # contents: write to create the GitHub Release; id-token: write for the
-      # OIDC token npm Trusted Publishing and --provenance use.
+      # contents: write to create the release tag and GitHub Release; id-token:
+      # write for the OIDC token npm Trusted Publishing and --provenance use.
       contents: write
       id-token: write
-    env:
-      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag || github.sha }}
           # Unshallow, because the release check reads tag objects and compares
           # them against HEAD.
           fetch-depth: 0
+
+      - name: Restrict automatic releases to main
+        if: inputs.tag == '' && github.ref != 'refs/heads/main'
+        run: |
+          echo "automatic releases must run from main; provide an existing tag to retry a release"
+          exit 1
 
       - uses: actions/setup-node@v5
         with:
@@ -54,14 +56,43 @@ jobs:
 
       - run: npm ci
 
-      - name: Check the tag against package.json
-        run: npm run release:check -- "$RELEASE_TAG"
+      - id: release
+        name: Resolve release tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -n "$REQUESTED_TAG" ]; then
+            RELEASE_TAG="$REQUESTED_TAG"
+          else
+            RELEASE_TAG="v$VERSION"
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
-      # The same gate CI runs, re-run against the tagged tree rather than
-      # trusted from the branch: a tag can point anywhere, including at a
-      # commit CI never saw.
+      # The same gates CI runs are repeated here for the exact commit that will
+      # receive the release tag. A failed gate leaves main and the registry
+      # release tag and registry untouched, so the run can be retried safely.
       - run: npm run verify
       - run: npm run test:integration
+
+      - name: Create or reuse the annotated release tag
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          node -e 'const tag = process.env.RELEASE_TAG; if (!/^v(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$/.test(tag)) { console.error(`invalid release tag: ${tag}`); process.exit(1); }'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            echo "$RELEASE_TAG already exists; release:check will verify it"
+          else
+            git tag --annotate "$RELEASE_TAG" --message "Release $RELEASE_TAG"
+            git push origin "refs/tags/$RELEASE_TAG"
+          fi
+
+      - name: Check the tag against package.json
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: npm run release:check -- "$RELEASE_TAG"
 
       # Trusted Publishing exchanges the OIDC token for a short-lived
       # registry credential, and that only exists in npm 11.5.1 and later.
@@ -92,6 +123,7 @@ jobs:
       - name: Create the GitHub Release if it does not exist
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "GitHub Release $RELEASE_TAG already exists"

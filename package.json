@@ -1,6 +1,6 @@
 {
   "name": "@nakedev/sveltekit-fsd",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Keep a SvelteKit project on Feature-Sliced Design: init the layout, generate slices, add auth and API error handling",
   "repository": {
     "type": "git",
