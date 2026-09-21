@@ -4,6 +4,16 @@ All notable changes to @nakedev/sveltekit-fsd are documented here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this
 project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Resolve the project before every command: the nearest config walking
+  upward, otherwise the single workspace child that holds one. Running from a
+  monorepo root or a project subdirectory now works; several workspace
+  projects is reported with names instead of guessed, and the bare menu
+  points at the workspace instead of starting `init` in the wrong place.
+
 ## 0.1.5
 
 ### Fixed

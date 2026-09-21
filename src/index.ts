@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import path from "path";
 import { Command } from "commander";
 import pc from "picocolors";
 
@@ -7,7 +8,8 @@ import { initProject } from "./commands/init";
 import { generateLayout, generatePage, generatePages, generateSlice, generateSlices } from "./commands/generate";
 import { addAuth, addErrorHandling, addPrettier } from "./commands/add";
 import { setProjectLocale, showProjectConfig } from "./commands/config";
-import { isProjectDir, readConfig } from "./utils/config";
+import { isProjectDir, readConfig, requireProjectDir, resolveProjectDir } from "./utils/config";
+import { toPosix } from "./utils/project";
 import { parseLocale } from "./utils/copy";
 import { cliVersion } from "./utils/version";
 
@@ -176,7 +178,7 @@ generate
 async function runAddWizard(): Promise<void> {
   // Read once, up front: the menu should say what is already installed rather
   // than letting someone walk a confirmation to reach "already installed".
-  const config = readConfig(process.cwd());
+  const config = readConfig(requireProjectDir(process.cwd()));
   const target = await select({
     message: "What do you want to add?",
     choices: [
@@ -305,6 +307,24 @@ config
 // of Commander's "unknown command 'ad' (Did you mean add?)".
 async function runTopMenu(): Promise<void> {
   if (!isProjectDir(process.cwd())) {
+    // A monorepo root is not a project, but one of its workspaces may be —
+    // sending that to `init` would scaffold a second project in the wrong
+    // place, so point at the workspace instead of starting anything.
+    const resolved = resolveProjectDir(process.cwd());
+    if (resolved.found) {
+      console.log(
+        pc.dim(`found a project at ${toPosix(path.relative(process.cwd(), resolved.projectDir))} — re-run from there.\n`)
+      );
+      return;
+    }
+    if (resolved.candidates.length > 0) {
+      console.log(pc.dim("several workspaces hold a project — re-run from the one you mean:"));
+      for (const candidate of resolved.candidates) {
+        console.log(pc.dim(`  ${toPosix(path.relative(process.cwd(), candidate))}`));
+      }
+      console.log();
+      return;
+    }
     console.log(pc.dim(`${process.cwd()} isn't a sveltekit-fsd project yet — only "init" can run here.\n`));
     await initProject(process.cwd(), {});
     return;
