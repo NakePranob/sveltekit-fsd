@@ -1,10 +1,10 @@
 import pc from "picocolors";
-import { readConfig, writeConfig } from "../utils/config";
+import { readConfig, requireProjectDir, writeConfig } from "../utils/config";
 import { parseLocale } from "../utils/copy";
 import { cliVersion } from "../utils/version";
 
 export function showProjectConfig(): void {
-  const config = readConfig(process.cwd());
+  const config = readConfig(requireProjectDir(process.cwd()));
   const rows: [string, string][] = [
     ["FSD layers", `${config.srcDir}/ (app, pages, features, entities, shared)`],
     ["routing", `${config.routesDir}/`],
@@ -45,12 +45,13 @@ export function setProjectLocale(value: string): void {
   const locale = parseLocale(value);
   if (locale === undefined) throw new Error('`config set locale` needs a value — "th" or "en"');
 
-  const config = readConfig(process.cwd());
+  const projectDir = requireProjectDir(process.cwd());
+  const config = readConfig(projectDir);
   if (config.locale === locale) {
     console.log(pc.dim(`\nalready ${locale} — nothing to change.\n`));
     return;
   }
-  writeConfig(process.cwd(), { ...config, locale });
+  writeConfig(projectDir, { ...config, locale });
   console.log(
     `\n  ${pc.green("~")} sveltekit-fsd.config.json: locale ${pc.dim(config.locale)} -> ${pc.green(locale)}\n` +
       pc.dim("  Applies to what gets generated from now on. Catalogs and titles already written are left as they are.\n")

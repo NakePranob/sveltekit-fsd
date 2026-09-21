@@ -1,8 +1,9 @@
 import path from "path";
 import fs from "fs-extra";
+import pc from "picocolors";
 import { PackageManager, ProjectConfig, ProjectFeatures } from "../types";
 import { Locale } from "./copy";
-import { detectPackageManager, hasPrettierConfig, writeJson } from "./project";
+import { detectPackageManager, hasPrettierConfig, toPosix, writeJson } from "./project";
 
 const CONFIG_FILE = "sveltekit-fsd.config.json";
 export const CONFIG_SCHEMA_VERSION = 1;
@@ -13,6 +14,114 @@ export function configPath(projectDir: string): string {
 
 export function isProjectDir(projectDir: string): boolean {
   return fs.existsSync(configPath(projectDir));
+}
+
+export type ProjectResolution =
+  | { found: true; projectDir: string; via: "self" | "parent" | "workspace" }
+  | { found: false; candidates: string[] };
+
+/**
+ * Workspace children of a monorepo root that hold a project config.
+ *
+ * Reads package.json `workspaces` in both shapes every manager documents —
+ * a plain array (`["web"]`) and `{ packages: [...] }` — expanding exact
+ * names plus one trailing `/*` level (`packages/*`). Anything fancier
+ * (braces, `**`) is out of scope on purpose: half-matching a glob could
+ * resolve to the wrong project, and a miss with a good error beats that.
+ * A missing or unparseable package.json means no workspaces, not a failure.
+ */
+export function workspaceCandidates(startDir: string): string[] {
+  const found: string[] = [];
+  let entries: unknown = undefined;
+  try {
+    const pkg = fs.readJsonSync(path.join(startDir, "package.json")) as { workspaces?: unknown };
+    entries = pkg.workspaces;
+  } catch {
+    return found;
+  }
+  const patterns =
+    (Array.isArray(entries) ? entries : (entries as { packages?: unknown } | undefined)?.packages) ?? [];
+  if (!Array.isArray(patterns)) return found;
+  const seen = new Set<string>();
+  const consider = (dir: string) => {
+    const resolved = path.resolve(startDir, dir);
+    if (!seen.has(resolved) && isProjectDir(resolved)) {
+      seen.add(resolved);
+      found.push(resolved);
+    }
+  };
+  for (const pattern of patterns) {
+    if (typeof pattern !== "string" || pattern === "") continue;
+    if (pattern.endsWith("/*")) {
+      const base = path.resolve(startDir, pattern.slice(0, -2));
+      let children: string[] = [];
+      try {
+        children = fs.readdirSync(base);
+      } catch {
+        continue;
+      }
+      for (const child of children) consider(path.join(base, child));
+    } else {
+      consider(pattern);
+    }
+  }
+  return found;
+}
+
+/**
+ * Where the CLI actually works: the directory holding the config file.
+ *
+ * Commands used to read process.cwd() and nothing further, which broke the
+ * two ways people really invoke them — from a subdirectory of the project
+ * (…/src/pages/…) and from a monorepo root whose workspace holds the
+ * project (bun/npm/yarn/pnpm `workspaces`). Both resolve here: upward first,
+ * then a workspace child when exactly one holds a config. Several candidates
+ * is a miss, not a guess — the caller reports them and the user picks.
+ */
+export function resolveProjectDir(startDir: string): ProjectResolution {
+  const start = path.resolve(startDir);
+  let dir = start;
+  for (;;) {
+    if (isProjectDir(dir)) {
+      return { found: true, projectDir: dir, via: dir === start ? "self" : "parent" };
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  const candidates = workspaceCandidates(start);
+  if (candidates.length === 1) {
+    return { found: true, projectDir: candidates[0], via: "workspace" };
+  }
+  return { found: false, candidates };
+}
+
+/**
+ * resolveProjectDir, but throwing the error a miss deserves: what was
+ * searched, and — when workspaces hold configs — which directories to
+ * re-run from instead of `init`, which would scaffold a second project in
+ * the wrong place.
+ */
+export function requireProjectDir(startDir: string): string {
+  const resolved = resolveProjectDir(startDir);
+  if (!resolved.found) {
+    const lines = [
+      `no ${CONFIG_FILE} found — searched upward from ${startDir}, then its package.json workspaces.`,
+    ];
+    if (resolved.candidates.length > 1) {
+      lines.push("Several workspaces hold a project; re-run from the one you mean:");
+      for (const candidate of resolved.candidates) {
+        lines.push(`  ${toPosix(path.relative(path.resolve(startDir), candidate))}`);
+      }
+    } else {
+      lines.push("Run `sveltekit-fsd init` in a SvelteKit project first.");
+    }
+    throw new Error(lines.join("\n"));
+  }
+  if (resolved.via === "workspace") {
+    console.log(pc.dim(`using project at ${toPosix(path.relative(path.resolve(startDir), resolved.projectDir))}`));
+  }
+  return resolved.projectDir;
 }
 
 export function writeConfig(projectDir: string, config: ProjectConfig): void {

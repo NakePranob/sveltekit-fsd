@@ -278,6 +278,17 @@ Only the missing files are written, new exports are appended to the slice's
 nothing to add, the command says so and writes nothing. A page that is already
 routed from somewhere else does not get a second route file.
 
+## Monorepos
+
+Every command works out where the project is before doing anything: the
+nearest `sveltekit-fsd.config.json` walking upward (so `web/src/pages/…`
+works), otherwise the single workspace child that holds one — `web/` in a
+`web/`-beside-`api/` checkout with `"workspaces": ["web"]`. Several
+workspace projects is not a guess the CLI makes for you: it names each one
+and asks you to re-run from the one you mean. Running bare `sveltekit-fsd`
+where no project resolves says the same instead of starting `init` somewhere
+it does not belong.
+
 ## Generated copy, and i18n
 
 `--locale` decides what language the first draft of the generated user-facing

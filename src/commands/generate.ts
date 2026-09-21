@@ -4,7 +4,7 @@ import pc from "picocolors";
 
 import { SLICE_LAYERS, SEGMENTS, Segment, SliceLayer } from "../types";
 import { checkbox, confirm, input, select } from "../prompts";
-import { readConfig } from "../utils/config";
+import { readConfig, requireProjectDir } from "../utils/config";
 import { copyFor } from "../utils/copy";
 import {
   normalizeRoute,
@@ -34,7 +34,8 @@ export interface PageOptions {
 }
 
 export async function generatePage(rawName: string | undefined, opts: PageOptions): Promise<void> {
-  const config = readConfig(process.cwd());
+  const projectDir = requireProjectDir(process.cwd());
+  const config = readConfig(projectDir);
   assertInputs("page", rawName);
   const root = resolveFsdRoot(config.srcDir, opts.root);
 
@@ -121,14 +122,14 @@ export async function generatePage(rawName: string | undefined, opts: PageOption
   // A page that already exists is being extended, not recreated — `--errors` or
   // `--api` on a slice generated bare earlier is the normal way those get
   // added, so the existing files are not an error. `--model` remains an alias.
-  const extending = fs.existsSync(path.join(process.cwd(), slice));
+  const extending = fs.existsSync(path.join(projectDir, slice));
 
   // A page being extended may already be routed from somewhere else —
   // `--route "(admin)/dashboard"` the first time round. Writing the default
   // route file now would give one page two URLs, from a command that printed
   // success.
   const existingRoute = extending
-    ? findRouteFor(process.cwd(), config.routesDir, sliceImportPath(config.alias, config.srcDir, root, "pages", naming.directory))
+    ? findRouteFor(projectDir, config.routesDir, sliceImportPath(config.alias, config.srcDir, root, "pages", naming.directory))
     : undefined;
 
   const context = {
@@ -141,7 +142,7 @@ export async function generatePage(rawName: string | undefined, opts: PageOption
   };
 
   const written = await applyTemplates(
-    process.cwd(),
+    projectDir,
     [
       { template: "generate/page/index.ts.hbs", output: `${slice}/index.ts` },
       { template: "generate/page/page.svelte.hbs", output: `${slice}/ui/${naming.name}-page.svelte` },
@@ -188,7 +189,7 @@ export async function generatePage(rawName: string | undefined, opts: PageOption
     }
   }
   if (auth) {
-    const layoutGuard = findLayoutGuard(process.cwd(), config.srcDir);
+    const layoutGuard = findLayoutGuard(projectDir, config.srcDir);
     if (layoutGuard !== undefined) {
       console.log(
         pc.yellow(`\n${layoutGuard} already guards the routes under it.`) +
@@ -248,7 +249,8 @@ export async function generateSlice(
   rawName: string | undefined,
   opts: SliceOptions
 ): Promise<void> {
-  const config = readConfig(process.cwd());
+  const projectDir = requireProjectDir(process.cwd());
+  const config = readConfig(projectDir);
   assertSliceInputs(rawLayer, rawName, opts);
   const root = resolveFsdRoot(config.srcDir, opts.root);
 
@@ -321,7 +323,7 @@ export async function generateSlice(
   // Only the segments that are not on disk yet. Drives both what gets written
   // and which export lines join an existing index.ts, so extending a slice never
   // re-announces a segment it already had.
-  const onDisk = existingSegments(process.cwd(), slicePath(root, layer, naming.directory), naming.name);
+  const onDisk = existingSegments(projectDir, slicePath(root, layer, naming.directory), naming.name);
   const added = Object.fromEntries(
     Object.entries(segments).map(([segment, wanted]) => [segment, wanted && !onDisk.includes(segment)])
   );
@@ -329,7 +331,7 @@ export async function generateSlice(
   const context = { ...naming, ...config, copy: copyFor(config.locale), layer, segments };
 
   const slice = slicePath(root, layer, naming.directory);
-  const extending = fs.existsSync(path.join(process.cwd(), slice));
+  const extending = fs.existsSync(path.join(projectDir, slice));
   const entries: TemplateEntry[] = [
     // index.ts is handled separately when extending: it has to gain the new
     // segments' exports without losing whatever is already in it (including
@@ -357,7 +359,7 @@ export async function generateSlice(
     },
   ];
 
-  const written = await applyTemplates(process.cwd(), entries, context, { skipExisting: extending });
+  const written = await applyTemplates(projectDir, entries, context, { skipExisting: extending });
 
   if (extending) {
     if (written.length === 0) {
@@ -370,13 +372,13 @@ export async function generateSlice(
     // segments switched on, so the export lines cannot drift from the files they
     // point at.
     for (const line of renderTemplate("generate/slice/index.ts.hbs", { ...context, segments: added }).split("\n")) {
-      if (line.trim() !== "" && appendExport(process.cwd(), `${slice}/index.ts`, line)) {
+      if (line.trim() !== "" && appendExport(projectDir, `${slice}/index.ts`, line)) {
         if (!written.includes(`${slice}/index.ts`)) written.push(`${slice}/index.ts`);
       }
     }
     // Appended as text rather than rendered, so applyTemplates never formatted
     // it — and `add prettier` puts a --check on lint.
-    await formatFiles(process.cwd(), [`${slice}/index.ts`]);
+    await formatFiles(projectDir, [`${slice}/index.ts`]);
   }
 
   report(written);
@@ -602,7 +604,8 @@ export interface LayoutOptions {
  * property of the shell, not something each page should re-declare.
  */
 export async function generateLayout(rawName: string | undefined, opts: LayoutOptions): Promise<void> {
-  const config = readConfig(process.cwd());
+  const projectDir = requireProjectDir(process.cwd());
+  const config = readConfig(projectDir);
   assertInputs("layout", rawName);
 
   const name =
@@ -646,9 +649,9 @@ export async function generateLayout(rawName: string | undefined, opts: LayoutOp
   const layouts = `${config.srcDir}/app/layouts`;
   // Same rule as page and slice: an existing layout is being extended (given a
   // route file it did not have), not recreated.
-  const extending = fs.existsSync(path.join(process.cwd(), `${layouts}/${naming.name}-layout.svelte`));
+  const extending = fs.existsSync(path.join(projectDir, `${layouts}/${naming.name}-layout.svelte`));
   const written = await applyTemplates(
-    process.cwd(),
+    projectDir,
     [
       { template: "generate/layout/layout.svelte.hbs", output: `${layouts}/${naming.name}-layout.svelte` },
       {
@@ -685,14 +688,14 @@ export async function generateLayout(rawName: string | undefined, opts: LayoutOp
 
   if (
     appendExport(
-      process.cwd(),
+      projectDir,
       `${layouts}/index.ts`,
       `export { default as ${naming.pascal}Layout } from "./${naming.name}-layout.svelte";`
     )
   ) {
     written.push(`${layouts}/index.ts`);
   }
-  await formatFiles(process.cwd(), [`${layouts}/index.ts`]);
+  await formatFiles(projectDir, [`${layouts}/index.ts`]);
 
   report(written);
   if (guard) {

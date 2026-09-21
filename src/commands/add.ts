@@ -4,7 +4,7 @@ import pc from "picocolors";
 
 import { ProjectConfig } from "../types";
 import { confirm } from "../prompts";
-import { readConfig, setFeature } from "../utils/config";
+import { readConfig, requireProjectDir, setFeature } from "../utils/config";
 import { asCatalogEntries, copyFor } from "../utils/copy";
 import { applyTemplates, formatFiles, TemplateEntry } from "../utils/render";
 import {
@@ -71,7 +71,7 @@ function testRunner(projectDir: string, config: ProjectConfig): string | undefin
 /** Returns the dependencies added to package.json, so a caller that chains
  *  another add can install once at the end instead of twice. */
 export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
-  const projectDir = process.cwd();
+  const projectDir = requireProjectDir(process.cwd());
   const config = readConfig(projectDir);
   if (config.features.errorHandling) {
     throw new Error(
@@ -216,7 +216,7 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
 }
 
 export async function addAuth(opts: AddOptions): Promise<void> {
-  const projectDir = process.cwd();
+  const projectDir = requireProjectDir(process.cwd());
   let config = readConfig(projectDir);
   if (config.features.auth) {
     throw new Error(
@@ -338,7 +338,7 @@ export async function addAuth(opts: AddOptions): Promise<void> {
  * would only be picking a fight.
  */
 export async function addPrettier(opts: AddOptions): Promise<void> {
-  const projectDir = process.cwd();
+  const projectDir = requireProjectDir(process.cwd());
   const config = readConfig(projectDir);
   const stylesheet = `${config.srcDir}/app/styles/app.css`;
   const tailwind = hasDependency(projectDir, "tailwindcss");
