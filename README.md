@@ -82,7 +82,10 @@ npm run lint                       # eslint (import boundary) + steiger (whole t
 ## Requirements
 
 - **Node.js >=20.9** to run the CLI.
-- A **SvelteKit 2** project in TypeScript, created by `sv create`. Svelte 5 and
+- A **SvelteKit 2 or 3** project in TypeScript, created by `sv create`. The CLI
+  reads which one from the installed `@sveltejs/kit` (or the declared range,
+  before an install) and generates for it; a SvelteKit 3 app itself needs
+  Node.js 22.17+. Svelte 5 and
   runes mode — the generated components use `$props`, `$state`, `$derived` and
   `$effect`, and `sv create` turns runes on for you.
 - The project's **package manager** — npm, pnpm, yarn or bun. Detected from the
@@ -140,17 +143,26 @@ remain available for scripts and CI.
 | page template | `src/app.html` | `src/app/index.html` |
 | stylesheet | `src/routes/layout.css` (wherever the layout imports it from) | `src/app/styles/app.css` |
 
-and it points SvelteKit at all three, by patching whichever config file is
-actually live — `vite.config.ts` or `svelte.config.js`, never both
+and it points SvelteKit at all three. How depends on the major it finds
 ([why](docs/design-notes.md#which-config-file-init-patches)):
 
-```js
-files: { routes: 'src/app/routes', appTemplate: 'src/app/index.html' },
-alias: { '@/*': 'src/*' }
-```
+| | SvelteKit 2 | SvelteKit 3 |
+|---|---|---|
+| patched | `vite.config.ts` or `svelte.config.js`, whichever is live | `vite.config.ts` — the only config 3 reads |
+| routes | `files: { routes: 'src/app/routes', appTemplate: 'src/app/index.html' }` | the same |
+| imports | `alias: { '@/*': 'src/*' }` in that config | `"imports": { "#/*": "./src/*/index.ts" }` in package.json |
+| written as | `@/pages/login` | `#/pages/login` |
 
-`tsconfig.json` is **not** touched — SvelteKit writes `kit.alias` into the
-generated `.svelte-kit/tsconfig.json` that yours extends.
+SvelteKit 3 deprecates `alias`, so a project started on 3 imports through a
+package.json subpath import instead. It maps straight to `index.ts`, which also
+means a path into a slice does not resolve at all
+([why](docs/design-notes.md#why-sveltekit-3-projects-import-through--not-)).
+The spelling is chosen once, here, and recorded in `sveltekit-fsd.config.json`:
+every later command generates imports that way.
+
+`tsconfig.json` is **not** touched on either — SvelteKit 2 writes `kit.alias`
+into the generated `.svelte-kit/tsconfig.json` that yours extends, and
+TypeScript reads a package.json `imports` map on its own.
 
 It also adds:
 
@@ -158,7 +170,8 @@ It also adds:
   config. No new dependencies: core `no-restricted-imports` plus the layer order.
 - `steiger.config.ts` + `steiger` and the FSD plugin, chained onto `lint`.
   [Why two linters](docs/design-notes.md#two-linters-on-purpose).
-- `components.json` so `shadcn-svelte add` writes into `src/shared/ui`.
+- `components.json` so `shadcn-svelte add` writes into `src/shared/ui` —
+  SvelteKit 2 only, see [Known limitations](#known-limitations).
 - `docs/fsd.md` — the convention, in this project's own words.
 - `AGENTS.md` and two agent skills at the repository root. Codex can load the
   project guidance from `AGENTS.md`; Claude Code can use the skills through the
@@ -242,6 +255,11 @@ per-domain catalogs mapping the API's machine codes to sentences, an axios clien
 with a single-flight 401 refresh, and a QueryClient that ends the session when a
 refresh can no longer save it.
 
+The API base URL is `PUBLIC_API_URL`, read when the app starts. On SvelteKit 3
+it is declared in `src/env.ts` — created, or added to the `defineEnvVars({ ... })`
+you already have — and read from `$app/env/public`; on 2 it comes from
+`$env/dynamic/public`.
+
 Two rules in there fail silently in a browser rather than loudly, which is why
 they get the only generated test —
 [details](docs/design-notes.md#the-two-rules-in-add-error-handling-that-get-the-only-generated-test).
@@ -302,6 +320,20 @@ translator where it is rendered:
 ```
 
 The codes stay the keys. They are the API's contract, not copy.
+
+## Known limitations
+
+- **A project initialised on SvelteKit 2 keeps `@/` after upgrading to 3.** It
+  still works, but SvelteKit 3 prints `config.alias is deprecated` on every
+  `dev`, `build` and `check`, and the option is slated for removal. `add` and
+  `generate` follow the SvelteKit you run now — env and navigation APIs
+  included — but keep the import spelling `init` recorded. There is no command
+  that moves a project to `#/` yet.
+- **No `components.json` on SvelteKit 3.** shadcn-svelte resolves a `#` alias
+  through the import map, and through one that ends every specifier in
+  `index.ts` it writes components into `src/shared/ui/noop.js/`
+  ([details](docs/design-notes.md#why-sveltekit-3-projects-get-no-componentsjson)).
+  `init` says so and leaves the file to you.
 
 ## Development
 

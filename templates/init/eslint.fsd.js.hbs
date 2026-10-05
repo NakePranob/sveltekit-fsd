@@ -23,6 +23,20 @@ const LAYERS = ["app", "pages", "widgets", "features", "entities", "shared"];
 // have no sibling slices to keep apart and no index.ts to enter through.
 const SLICED = ["pages", "widgets", "features", "entities"];
 
+{{#if kit3}}
+// One spelling, deliberately. `#lib` still means {{srcDir}}/lib — SvelteKit's own
+// directory, which is not a layer and which `init` does not touch. FSD trees are
+// reached through `{{alias}}/`, with an optional nested root path, so the
+// patterns below cover both forms. The first pattern covers the configured root.
+// The second covers an additional FSD root nested below it, which is what
+// `generate ... --root` creates when a project keeps more than one
+// independently owned layer tree.
+//
+// The `#` is escaped, and it has to be: these patterns are gitignore syntax,
+// where a line starting with `#` is a comment. Unescaped, every pattern below
+// matches nothing — the config loads, and the boundary enforces nothing.
+const forEachPrefix = (suffix) => [`\\#/${suffix}`, `\\#/**/${suffix}`];
+{{else}}
 // One spelling, deliberately. `kit.files.lib` is left at its default, so `$lib`
 // still means {{srcDir}}/lib — SvelteKit's own directory, which is not a layer
 // and which `init` does not touch. FSD trees are reached through `{{alias}}/`,
@@ -31,6 +45,7 @@ const SLICED = ["pages", "widgets", "features", "entities"];
 // additional FSD root nested below it, which is what `generate ... --root`
 // creates when a project keeps more than one independently owned layer tree.
 const forEachPrefix = (suffix) => [`{{alias}}/${suffix}`, `{{alias}}/**/${suffix}`];
+{{/if}}
 
 /**
  * Anything below a slice's own directory, from anywhere.

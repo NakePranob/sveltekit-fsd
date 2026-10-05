@@ -1,6 +1,7 @@
 import pc from "picocolors";
 import { readConfig, requireProjectDir, writeConfig } from "../utils/config";
 import { parseLocale } from "../utils/copy";
+import { usesSubpathImports } from "../utils/project";
 import { cliVersion } from "../utils/version";
 
 export function showProjectConfig(): void {
@@ -8,7 +9,12 @@ export function showProjectConfig(): void {
   const rows: [string, string][] = [
     ["FSD layers", `${config.srcDir}/ (app, pages, features, entities, shared)`],
     ["routing", `${config.routesDir}/`],
-    ["import alias", `${config.alias}/* -> ./${config.srcDir}/*`],
+    [
+      "import alias",
+      usesSubpathImports(config.alias)
+        ? `${config.alias}/* -> ./${config.srcDir}/*/index.ts (package.json imports)`
+        : `${config.alias}/* -> ./${config.srcDir}/*`,
+    ],
     ["copy language", config.locale],
     ["package manager", config.packageManager],
     ["error handling", config.features.errorHandling ? pc.green("installed") : pc.dim("not installed")],

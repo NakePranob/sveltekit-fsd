@@ -15,7 +15,7 @@ export default defineConfig([
       "./{{srcDir}}/hooks.*.ts",
       "./{{srcDir}}/params/**",
       "./{{srcDir}}/service-worker.ts",
-      // SvelteKit's own $lib. `init` leaves it alone rather than moving anybody's
+      // SvelteKit's own {{#if kit3}}#lib{{else}}$lib{{/if}}. `init` leaves it alone rather than moving anybody's
       // code, and it is not an FSD layer — shared/ is. Do not grow it: two homes
       // for shared code is the drift the layers exist to prevent.
       "./{{srcDir}}/lib/**",

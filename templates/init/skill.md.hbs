@@ -148,7 +148,7 @@ Breaking one of these is silent — the build passes and the app is wrong.
 - **CLI ergonomics follow the FSD CLI.** `generate page|slice` accepts multiple
   names, names may contain a slice group such as `employee/employee-record`,
   `-s` accepts comma- or space-separated segments, and `-r` selects another FSD
-  root inside `{{srcDir}}`. Keep `{{srcDir}}/lib/` for SvelteKit's `$lib`.
+  root inside `{{srcDir}}`. Keep `{{srcDir}}/lib/` for SvelteKit's `{{#if kit3}}#lib{{else}}$lib{{/if}}`.
 - **Move reused requests to their owner.** Entity-related requests belong in
   `entities/<name>/api/`, reused user actions in `features/<name>/api/`, and
   generic client or CRUD primitives in `shared/api/`.
@@ -156,9 +156,11 @@ Breaking one of these is silent — the build passes and the app is wrong.
   component's own `<svelte:head>`; there is nothing to re-export.
 - **Imports point downwards, and a slice is entered through its `index.ts`.**
   `{{alias}}/features/x`, never `{{alias}}/features/x/ui/x.svelte`. Inside a
-  slice the import is relative. `$lib/` is SvelteKit's own `{{srcDir}}/lib/`,
+  slice the import is relative. `{{#if kit3}}#lib{{else}}$lib{{/if}}/` is SvelteKit's own `{{srcDir}}/lib/`,
   not a layer: shared code goes in `{{srcDir}}/shared/`, imported as
-  `{{alias}}/shared/...`.
+  `{{alias}}/shared/...`.{{#if kit3}} `{{alias}}/` only ever resolves to an
+  `index.ts` (the `imports` map in package.json), so a path into a slice does
+  not compile — that is the public API, not a typo to work around.{{/if}}
 - **Never render `error.message` as UI copy.** Add the code to the domain's own
   catalog (`model/<name>-errors.ts`) and let the fallback name the action that
   failed. A backend message is written for a log.
@@ -200,8 +202,9 @@ After generating and filling in a slice:
 ~~~
 
 `svelte-check`, not `tsc`: a `.svelte` file's types only exist once the compiler
-has looked at it, and `svelte-kit sync` has to have run for `{{alias}}/` to
-resolve at all — which `check` does for you.
+has looked at it, and `svelte-kit sync` has to have run for {{#if kit3}}SvelteKit's
+generated types — `./$types`, `$app/env/public` — to exist at all{{else}}`{{alias}}/` to
+resolve at all{{/if}} — which `check` does for you.
 
 Both linters report a wrong-way or slice-internal import — ESLint at the file as
 you type it, steiger over the whole tree. steiger also reports what no single

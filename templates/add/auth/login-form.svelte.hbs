@@ -12,7 +12,7 @@
 
 	// requireSession sends people here with ?next=, so pick that back up rather
 	// than always landing on the home page. safeNext is what keeps it same-site.
-	const signedIn = () => goto(safeNext(page.url.searchParams.get("next")), { replaceState: true });
+	const signedIn = () => goto(safeNext(page.url.searchParams.get("next")), { {{#if kit3}}replace{{else}}replaceState{{/if}}: true });
 
 	// Already signed in: someone typed /login, followed an old link, or came back
 	// to a tab that still had it open. Same destination as a fresh sign-in, so a

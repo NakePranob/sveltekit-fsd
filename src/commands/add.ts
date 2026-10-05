@@ -12,8 +12,10 @@ import {
   appendEnvExample,
   appendExport,
   appendScript,
+  detectKitMajor,
   hasDependency,
   installDependencies,
+  patchEnvFile,
   patchLayoutProviders,
   rootLayoutPath,
   runCommand,
@@ -33,6 +35,25 @@ const PRETTIER_DEV_DEPS = {
 const TAILWIND_PRETTIER_DEV_DEPS = {
   "prettier-plugin-tailwindcss": "^0.8.1",
 };
+
+/** SvelteKit 3 declares its environment variables in this file, and nowhere else. */
+const KIT_ENV_FILE = "src/env.ts";
+
+/**
+ * The API base URL, as a SvelteKit 3 `defineEnvVars` entry. One string for the
+ * new-file template, the patch into an existing file, and the printed fallback,
+ * so the three cannot drift.
+ */
+const API_URL_ENV_DECLARATION = [
+  "PUBLIC_API_URL: {",
+  "    // Readable in the browser, and read when the app starts rather than inlined",
+  "    // at build time — one build can point at staging or production, and a fresh",
+  "    // clone with no .env still starts, on the default below.",
+  "    public: true,",
+  '    description: "Base URL of the API, including whatever prefix it mounts its routes under.",',
+  '    schema: (value) => value ?? "http://localhost:8080/api",',
+  "  }",
+].join("\n");
 
 export interface AddOptions {
   install?: boolean;
@@ -57,8 +78,9 @@ async function confirmAdd(lines: string[], opts: AddOptions): Promise<void> {
  * Which test runner the generated tests are written against, if any.
  *
  * vitest first: `sv add vitest` is one command, it is what a SvelteKit project
- * reaches for, and it resolves the `@/` alias through the same Vite config the
- * app uses — so a test that imports across layers just works. `bun test` does
+ * reaches for, and it resolves imports through the same Vite config the app
+ * uses — the `@/` alias, or the `#/` map in package.json — so a test that
+ * imports across layers just works. `bun test` does
  * the same with no config of its own. Anything else would need a runner set up
  * first, and choosing one for somebody is not this CLI's call.
  */
@@ -82,11 +104,18 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
   const providersFile = `${config.srcDir}/app/providers/providers.svelte`;
   const ownsProviders = !fs.existsSync(path.join(projectDir, providersFile));
   const layoutFile = rootLayoutPath(config.routesDir);
+  // Asked here, not at init: the project may have moved to SvelteKit 3 since,
+  // and the env module is the one file whose API differs between the two.
+  const baseContext = errorContext(projectDir, config);
+  const ownsKitEnv = baseContext.kit3 && !fs.existsSync(path.join(projectDir, KIT_ENV_FILE));
 
   await confirmAdd(
     [
       `add ${pc.cyan(`${config.srcDir}/shared/api/`)} — ApiError, the error catalog + resolver, an axios client with a single-flight 401 refresh, and a QueryClient`,
       `add ${pc.cyan(`${config.srcDir}/shared/ui/form-error.svelte`)} and ${pc.cyan(`${config.srcDir}/shared/config/env.ts`)}`,
+      ...(baseContext.kit3
+        ? [`${ownsKitEnv ? "add" : "declare PUBLIC_API_URL in"} ${pc.cyan(KIT_ENV_FILE)} — SvelteKit 3 reads environment variables from nowhere else`]
+        : []),
       `add ${pc.cyan(`${config.srcDir}/shared/auth/access-token.ts`)} — the in-memory token the request interceptor reads (\`add auth\` fills in the rest)`,
       ownsProviders
         ? `add ${pc.cyan(providersFile)} and wrap ${layoutFile} in <Providers>`
@@ -100,7 +129,7 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
   // the one test — but only where it runs with no extra setup.
   const runner = testRunner(projectDir, config);
 
-  const context = { ...errorContext(config), testRunner: runner };
+  const context = { ...baseContext, testRunner: runner, envDeclaration: API_URL_ENV_DECLARATION };
   const entries: TemplateEntry[] = [
     { template: "add/errors/api-error.ts.hbs", output: `${config.srcDir}/shared/api/api-error.ts` },
     { template: "add/errors/error-catalog.ts.hbs", output: `${config.srcDir}/shared/api/error-catalog.ts` },
@@ -110,6 +139,7 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
     { template: "add/errors/index.ts.hbs", output: `${config.srcDir}/shared/api/index.ts` },
     { template: "add/errors/access-token.ts.hbs", output: `${config.srcDir}/shared/auth/access-token.ts` },
     { template: "add/errors/env.ts.hbs", output: `${config.srcDir}/shared/config/env.ts` },
+    { template: "add/errors/kit-env.ts.hbs", output: KIT_ENV_FILE, when: () => ownsKitEnv },
     { template: "add/errors/config-index.ts.hbs", output: `${config.srcDir}/shared/config/index.ts` },
     { template: "add/errors/form-error.svelte.hbs", output: `${config.srcDir}/shared/ui/form-error.svelte` },
     { template: "add/errors/providers.svelte.hbs", output: providersFile, when: () => ownsProviders },
@@ -153,15 +183,27 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
   ) {
     written.push(`${config.srcDir}/shared/auth/index.ts`);
   }
+  // The project's own src/env.ts gets the variable added, never replaced: it is
+  // where every other variable the app reads is declared.
+  const envPatch = baseContext.kit3 && !ownsKitEnv
+    ? patchEnvFile(projectDir, KIT_ENV_FILE, "PUBLIC_API_URL", API_URL_ENV_DECLARATION)
+    : "already";
+  if (envPatch === "patched") written.push(`${KIT_ENV_FILE} (PUBLIC_API_URL)`);
+
   if (
     appendEnvExample(
       projectDir,
       "PUBLIC_API_URL",
       "# Base URL of the API, including whatever prefix it mounts its routes under.\n" +
-        "# The PUBLIC_ prefix is what lets SvelteKit expose it to the browser; anything\n" +
-        "# without it stays server-only, which is the rule that keeps a secret out of a\n" +
-        "# bundle. Whatever origin this app runs on must also be allowed by the API's\n" +
-        "# CORS config, or the browser drops the refresh cookie.\n" +
+        (baseContext.kit3
+          ? "# Exposed to the browser because src/env.ts declares it `public: true`;\n" +
+            "# anything declared without that stays server-only, which is the rule that\n" +
+            "# keeps a secret out of a bundle. Whatever origin this app runs on must also\n" +
+            "# be allowed by the API's CORS config, or the browser drops the refresh cookie.\n"
+          : "# The PUBLIC_ prefix is what lets SvelteKit expose it to the browser; anything\n" +
+            "# without it stays server-only, which is the rule that keeps a secret out of a\n" +
+            "# bundle. Whatever origin this app runs on must also be allowed by the API's\n" +
+            "# CORS config, or the browser drops the refresh cookie.\n") +
         "PUBLIC_API_URL=http://localhost:8080/api\n"
     )
   ) {
@@ -177,6 +219,7 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
     layoutFile,
     `${config.srcDir}/shared/ui/index.ts`,
     `${config.srcDir}/shared/auth/index.ts`,
+    ...(envPatch === "patched" ? [KIT_ENV_FILE] : []),
   ]);
 
   const added = addDependencies(projectDir, API_DEPS);
@@ -195,6 +238,13 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
     console.log(
       pc.yellow(`\ncould not find {@render children()} in ${layoutFile} — wrap it in <Providers> by hand:`) +
         `\n  import { Providers } from "${config.alias}/app/providers";`
+    );
+  }
+
+  if (envPatch === "manual") {
+    console.log(
+      pc.yellow(`\ncould not find a \`defineEnvVars({\` in ${KIT_ENV_FILE} to add to — declare the API URL there by hand:`) +
+        `\n  ${API_URL_ENV_DECLARATION.replace(/\n/g, "\n  ")}`
     );
   }
 
@@ -250,7 +300,7 @@ export async function addAuth(opts: AddOptions): Promise<void> {
 
   const runner = testRunner(projectDir, config);
   const context = {
-    ...errorContext(config),
+    ...errorContext(projectDir, config),
     testRunner: runner,
     name: "login",
     directory: "login",
@@ -428,10 +478,14 @@ export async function addPrettier(opts: AddOptions): Promise<void> {
   );
 }
 
-function errorContext(config: ProjectConfig) {
+function errorContext(projectDir: string, config: ProjectConfig) {
   const copy = copyFor(config.locale);
   return {
     ...config,
+    // The major as it is now, not as it was at init — a project upgraded since
+    // gets the navigation and env APIs of the SvelteKit it actually runs. The
+    // import spelling is the one thing that stays as init recorded it.
+    kit3: detectKitMajor(projectDir) === 3,
     copy,
     commonCatalogEntries: asCatalogEntries(copy.common),
     authCatalogEntries: asCatalogEntries(copy.auth),

@@ -3,7 +3,7 @@ import type { AxiosAdapter } from "axios";
 
 import { createApiClient } from "./client";
 import { ApiError } from "./api-error";
-import { setAccessToken } from "{{alias}}/shared/auth/access-token";
+import { setAccessToken } from "../auth/access-token";
 
 /**
  * The two rules in the response interceptor that fail silently in a browser: a

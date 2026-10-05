@@ -8,6 +8,7 @@ interface PackageJson {
   scripts?: Record<string, string>;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  imports?: Record<string, unknown>;
 }
 
 export function packageJsonPath(projectDir: string): string {
@@ -152,15 +153,77 @@ export function toPosix(value: string): string {
   return value.split(path.sep).join("/");
 }
 
+export type KitMajor = 2 | 3;
+
+/**
+ * Which SvelteKit major this project is on.
+ *
+ * The installed package first, because that is what actually runs — a range
+ * like `>=2` says nothing about whether the lockfile resolved 2 or 3. Only when
+ * nothing is installed yet (`sv create --no-install`, then `init`) does the
+ * declared range decide. Anything that names no version (`latest`, `next`,
+ * `workspace:^`) is a refusal, not a guess: the two majors want a different
+ * config shape and a different import map, and the wrong one is written into
+ * somebody's project.
+ */
+export function detectKitMajor(projectDir: string): KitMajor {
+  const pkg = readPackageJson(projectDir);
+  const declared = pkg.dependencies?.["@sveltejs/kit"] ?? pkg.devDependencies?.["@sveltejs/kit"];
+  if (declared === undefined) {
+    throw new Error(
+      "this package.json has no `@sveltejs/kit` dependency — create the app first (`npx sv create`), then run `sveltekit-fsd init` inside it"
+    );
+  }
+
+  const installed = installedVersion(projectDir, "@sveltejs/kit");
+  const source = installed !== undefined ? `installed @sveltejs/kit ${installed}` : `"@sveltejs/kit": "${declared}"`;
+  const match = /\d+/.exec((installed ?? declared).replace(/^(workspace|npm):/, ""));
+  if (!match) {
+    throw new Error(
+      `could not tell which SvelteKit major this is — package.json declares ${source} and none is installed. Install dependencies, then re-run.`
+    );
+  }
+  const major = Number(match[0]);
+  if (major !== 2 && major !== 3) {
+    throw new Error(`${source} is SvelteKit ${major} — this CLI supports SvelteKit 2 and 3`);
+  }
+  return major as KitMajor;
+}
+
+/** The version of a package as installed, looking upwards the way Node resolves
+ *  it — a monorepo hoists to the root, and pnpm's symlink resolves the same. */
+function installedVersion(projectDir: string, name: string): string | undefined {
+  let dir = path.resolve(projectDir);
+  for (;;) {
+    const file = path.join(dir, "node_modules", ...name.split("/"), "package.json");
+    if (fs.existsSync(file)) return (fs.readJsonSync(file) as { version?: string }).version;
+    const parent = path.dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
+ * Whether an alias is a package.json subpath import rather than a SvelteKit
+ * `alias` entry. Exact, not a heuristic: Node only accepts subpath imports that
+ * start with `#`, and `init` only ever writes `@` for the other kind.
+ */
+export function usesSubpathImports(alias: string): boolean {
+  return alias.startsWith("#");
+}
+
 /**
  * Where this project's SvelteKit config lives.
  *
- * Two places, and which one is live is not a matter of taste: `@sveltejs/kit`
- * loads the config from the Vite config **first** and only falls back to
- * `svelte.config.js` when there is none there. Current `sv create` puts
- * everything in `vite.config.ts` and writes no `svelte.config.js` at all, while
- * every project made before that has the opposite shape — and the FSD guide
- * still documents the `svelte.config.js` form.
+ * On SvelteKit 2 there are two places, and which one is live is not a matter of
+ * taste: `@sveltejs/kit` loads the config from the Vite config **first** and
+ * only falls back to `svelte.config.js` when there is none there. Projects made
+ * before `sv create` moved everything into `vite.config.ts` have the opposite
+ * shape — and the FSD guide still documents the `svelte.config.js` form.
+ *
+ * SvelteKit 3 reads only the Vite config, and throws if a `svelte.config.js`
+ * exists at all. So on 3 that file is an error to report, not a target: patching
+ * it would write correct values into a file nothing reads.
  *
  * Writing to the wrong one is the bad failure available here: the file looks
  * right, the values are correct, and SvelteKit never reads them, so the routes
@@ -168,14 +231,7 @@ export function toPosix(value: string): string {
  */
 export type KitConfig = { file: string; style: "vite" | "svelte" };
 
-export function detectKitConfig(projectDir: string): KitConfig {
-  const pkg = readPackageJson(projectDir);
-  if (!(pkg.dependencies?.["@sveltejs/kit"] ?? pkg.devDependencies?.["@sveltejs/kit"])) {
-    throw new Error(
-      "this package.json has no `@sveltejs/kit` dependency — create the app first (`npx sv create`), then run `sveltekit-fsd init` inside it"
-    );
-  }
-
+export function detectKitConfig(projectDir: string, major: KitMajor): KitConfig {
   for (const name of ["vite.config.ts", "vite.config.js", "vite.config.mts", "vite.config.mjs"]) {
     const file = path.join(projectDir, name);
     if (fs.existsSync(file) && /\bsveltekit\s*\(/.test(fs.readFileSync(file, "utf8"))) {
@@ -183,21 +239,35 @@ export function detectKitConfig(projectDir: string): KitConfig {
     }
   }
   for (const name of ["svelte.config.js", "svelte.config.ts"]) {
-    if (fs.existsSync(path.join(projectDir, name))) return { file: name, style: "svelte" };
+    if (!fs.existsSync(path.join(projectDir, name))) continue;
+    if (major === 3) {
+      throw new Error(
+        `found ${name} but no \`sveltekit()\` call in the Vite config — SvelteKit 3 reads its config only from vite.config.*, and refuses to start while ${name} exists. ` +
+          "Move its options into `sveltekit({ ... })` (`npx sv migrate sveltekit-3` does this), then re-run. Nothing was moved."
+      );
+    }
+    return { file: name, style: "svelte" };
   }
   throw new Error(
-    "found no SvelteKit config — expected a `sveltekit()` plugin call in vite.config.ts, or a svelte.config.js"
+    major === 3
+      ? "found no SvelteKit config — expected a `sveltekit()` plugin call in vite.config.ts"
+      : "found no SvelteKit config — expected a `sveltekit()` plugin call in vite.config.ts, or a svelte.config.js"
   );
 }
 
 /**
- * Puts `kit.files` and `kit.alias` into the project's SvelteKit config.
+ * Puts `kit.files` — and on SvelteKit 2, `kit.alias` — into the project's
+ * SvelteKit config.
  *
  * This is the one edit the whole layout depends on: `files.routes` is what
- * moves routing into the FSD app layer, and `alias` is what makes
+ * moves routing into the FSD app layer, and on SvelteKit 2 `alias` is what makes
  * `@/pages/login` resolve — in Vite, in `svelte-check`, and in steiger, because
  * SvelteKit writes both into the generated `.svelte-kit/tsconfig.json` that the
  * project's own tsconfig extends. Nothing here touches tsconfig.json itself.
+ *
+ * SvelteKit 3 deprecates `alias` and warns on every config load, so a `#` alias
+ * is not written here at all: it lives in package.json `imports`
+ * (patchPackageImports), which Vite and TypeScript both resolve natively.
  *
  * Inserted after the opening brace of the object that already configures
  * SvelteKit, rather than rebuilt: that object holds the adapter, the compiler
@@ -227,23 +297,26 @@ export function kitConfigPatch(
 ): string | "already" | "manual" {
   const source = fs.readFileSync(path.join(projectDir, config.file), "utf8");
   const quoted = (value: string) => source.includes(`'${value}'`) || source.includes(`"${value}"`);
-  if (quoted(options.routesDir) && quoted(options.appTemplate) && quoted(`${options.alias}/*`)) return "already";
+  const writesAlias = !usesSubpathImports(options.alias);
+  if (quoted(options.routesDir) && quoted(options.appTemplate) && (!writesAlias || quoted(`${options.alias}/*`))) {
+    return "already";
+  }
   // Our keys go in at the top of the object, and JavaScript does not reject a
   // key written twice — the later one wins. A `files` or `alias` the project
   // already has would silently replace ours: routes moved with nothing pointing
   // at them, or an `@/` that resolves nowhere, from a patch that said it worked.
+  // An `alias` only collides when we write one; on the `#` spelling the
+  // project's own is left to it.
   // ponytail: searched file-wide, so a Vite `resolve.alias` refuses too. That
   // errs toward printed instructions; scope it to the options object if it bites.
-  if (/\b(files|alias)["']?\s*:/.test(source)) return "manual";
+  if ((writesAlias ? /\b(files|alias)["']?\s*:/ : /\bfiles["']?\s*:/).test(source)) return "manual";
 
   const block =
     `files: {\n` +
     `\t\t\t\troutes: '${options.routesDir}',\n` +
     `\t\t\t\tappTemplate: '${options.appTemplate}'\n` +
     `\t\t\t},\n` +
-    `\t\t\talias: {\n` +
-    `\t\t\t\t'${options.alias}/*': '${options.srcDir}/*'\n` +
-    `\t\t\t},\n`;
+    (writesAlias ? `\t\t\talias: {\n` + `\t\t\t\t'${options.alias}/*': '${options.srcDir}/*'\n` + `\t\t\t},\n` : "");
 
   if (config.style === "vite") {
     // Anchored on `sveltekit(` and the first thing after it, which is either the
@@ -275,15 +348,78 @@ function write(file: string, contents: string): "patched" {
 /** The block `patchKitConfig` would have inserted, for printing when it could
  *  not find a place to put it. One source of truth for both. */
 export function kitConfigSnippet(options: KitConfigOptions): string {
-  return (
-    `  files: {\n` +
-    `    routes: '${options.routesDir}',\n` +
-    `    appTemplate: '${options.appTemplate}'\n` +
-    `  },\n` +
-    `  alias: {\n` +
-    `    '${options.alias}/*': '${options.srcDir}/*'\n` +
-    `  }`
-  );
+  const files = `  files: {\n` + `    routes: '${options.routesDir}',\n` + `    appTemplate: '${options.appTemplate}'\n` + `  }`;
+  if (usesSubpathImports(options.alias)) return files;
+  return files + `,\n  alias: {\n` + `    '${options.alias}/*': '${options.srcDir}/*'\n` + `  }`;
+}
+
+/**
+ * The package.json `imports` entry that makes a `#` alias resolve.
+ *
+ * `index.ts` on the end, and not as decoration: a subpath import never resolves
+ * a directory to its index the way `alias` did, so `"#/*": "./src/*"` leaves
+ * `#/pages/login` resolving to nothing. Mapping every specifier straight to the
+ * directory's `index.ts` keeps `#/pages/login` working — and makes reaching
+ * into a slice (`#/pages/login/ui/form.svelte`) fail to resolve at all, which is
+ * the FSD public-API rule enforced by the resolver itself.
+ *
+ * `.ts` rather than the `index.js` that `sv create` writes for `#lib`: `.js`
+ * leans on Vite rewriting the extension, which was never checked for an
+ * importer that is a `.svelte` file. `.ts` was, in every tool that reads it.
+ */
+export function subpathImport(alias: string, srcDir: string): Record<string, string> {
+  return { [`${alias}/*`]: `./${srcDir}/*/index.ts` };
+}
+
+/**
+ * Whether package.json already has these `imports` entries — so `init` can
+ * find out the mapping is taken before it has moved a single route.
+ * "manual": a key is there and points somewhere else, which is the user's.
+ */
+export function packageImportsStatus(
+  projectDir: string,
+  entries: Record<string, string>
+): "missing" | "already" | "manual" {
+  const imports = readPackageJson(projectDir).imports ?? {};
+  const keys = Object.keys(entries);
+  if (keys.some((key) => key in imports && imports[key] !== entries[key])) return "manual";
+  return keys.every((key) => imports[key] === entries[key]) ? "already" : "missing";
+}
+
+/**
+ * Adds `imports` entries to package.json, beside whatever is there (`sv create`
+ * writes `#lib` and `#lib/*`), with the indentation the file already had.
+ */
+export function patchPackageImports(
+  projectDir: string,
+  entries: Record<string, string>
+): "patched" | "already" | "manual" {
+  const status = packageImportsStatus(projectDir, entries);
+  if (status !== "missing") return status;
+  const file = packageJsonPath(projectDir);
+  const pkg = fs.readJsonSync(file) as PackageJson;
+  pkg.imports = { ...(pkg.imports ?? {}), ...entries };
+  writeJson(file, pkg);
+  return "patched";
+}
+
+/**
+ * Adds one variable to the `defineEnvVars({ ... })` object in a SvelteKit 3
+ * `src/env.ts` the project already has.
+ *
+ * Anchored on `defineEnvVars(` and the brace after it, the same narrowest-thing
+ * rule as the kit config: the declaration goes in first, every existing one is
+ * left byte-for-byte alone. Any other shape — a variable passed in, a spread —
+ * is "manual", and the caller prints what to add.
+ */
+export function patchEnvFile(projectDir: string, file: string, name: string, declaration: string): "patched" | "already" | "manual" {
+  const full = path.join(projectDir, file);
+  const source = fs.readFileSync(full, "utf8");
+  if (new RegExp(`\\b${name}\\b`).test(source)) return "already";
+  const call = /\bdefineEnvVars\s*\(\s*\{/.exec(source);
+  if (!call) return "manual";
+  const at = call.index + call[0].length;
+  return write(full, source.slice(0, at) + `\n\t${declaration},` + source.slice(at));
 }
 
 /**
@@ -473,6 +609,22 @@ export function detectStylesheetImport(projectDir: string, layoutFile: string): 
 }
 
 /**
+ * How the root layout spells its import of the app-layer stylesheet.
+ *
+ * Through the alias on `@` (`@/app/styles/app.css`). Relative on `#`, because
+ * that import map ends every specifier in `/index.ts` — `#/app/styles/app.css`
+ * would resolve to `app.css/index.ts`. Relative is the FSD-correct form here
+ * anyway: the layout and the stylesheet are both in the app layer.
+ * Posix, since it goes into source code.
+ */
+export function stylesheetSpecifier(routesDir: string, stylesheet: string, alias: string, srcDir: string): string {
+  if (usesSubpathImports(alias)) return path.posix.relative(routesDir, stylesheet);
+  // `@/*` maps to `src/*`, so the `src/` prefix is exactly what the alias
+  // replaces — `@/src/app/...` resolves to `src/src/app/...`, which is nothing.
+  return `${alias}/${stylesheet.slice(srcDir.length + 1)}`;
+}
+
+/**
  * Repoints the root layout's stylesheet import at the FSD app layer.
  *
  * The CSS moves because Tailwind v4's `@theme` is project-wide configuration,
@@ -480,17 +632,14 @@ export function detectStylesheetImport(projectDir: string, layoutFile: string): 
  * only reference, and it is a *relative* path — so leaving it while the file
  * moves is not a stale import, it is an import that now resolves to a different
  * file or to nothing at all.
+ *
+ * `to` is the whole specifier — see stylesheetSpecifier for why it is not
+ * always the alias.
  */
-export function patchLayoutStyleImport(
-  projectDir: string,
-  layoutFile: string,
-  from: string,
-  alias: string,
-  stylesheet: string
-): boolean {
+export function patchLayoutStyleImport(projectDir: string, layoutFile: string, from: string, to: string): boolean {
   const file = path.join(projectDir, layoutFile);
   const source = fs.readFileSync(file, "utf8");
-  const target = `import '${alias}/${stylesheet}';`;
+  const target = `import '${to}';`;
   if (source.includes(target)) return false;
 
   const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

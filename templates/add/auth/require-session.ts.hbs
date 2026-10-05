@@ -35,7 +35,7 @@ export function requireSession() {
     // Through resolve(), not a bare string: it prepends `base`, so this keeps
     // working when the app is served from a sub-path.
     if (session.isError) {
-      void goto(resolve(`/login?next=${encodeURIComponent(page.url.pathname)}`), { replaceState: true });
+      void goto(resolve(`/login?next=${encodeURIComponent(page.url.pathname)}`), { {{#if kit3}}replace{{else}}replaceState{{/if}}: true });
     }
   });
 
