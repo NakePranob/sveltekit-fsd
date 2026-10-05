@@ -6,6 +6,40 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## 0.3.0
+
+### Added
+
+- SvelteKit 3, alongside SvelteKit 2. The major is read from the installed
+  `@sveltejs/kit` (the declared range before an install), and anything that
+  names no version is refused rather than guessed. SvelteKit 2 output is
+  unchanged.
+- On SvelteKit 3, `init` maps `#/*` to `./src/*/index.ts` in package.json
+  `imports` instead of the `alias` option SvelteKit 3 deprecates, so generated
+  imports read `#/pages/login` and a path into a slice does not resolve. The
+  spelling is recorded at `init`; every later command keeps it.
+- On SvelteKit 3, `add error-handling` declares `PUBLIC_API_URL` in
+  `src/env.ts` — creating it, or adding to the `defineEnvVars({ ... })` already
+  there — and reads it from `$app/env/public`; `add auth` navigates with
+  `{ replace: true }`.
+
+### Changed
+
+- The API client imports the access token relatively, on both majors.
+- On SvelteKit 3, `init` refuses a project whose only config is
+  `svelte.config.js`, and writes no `components.json`: shadcn-svelte resolves a
+  `#` alias into `src/shared/ui/noop.js/` through that import map.
+- CI runs the integration test once per SvelteKit major, and on 3 fails on any
+  SvelteKit deprecation warning.
+
+### Fixed
+
+- A project made by current `sv create` (SvelteKit 3) failed `npm run check`
+  after `add error-handling`: SvelteKit 3 generates no types for
+  `$env/dynamic/public`.
+
+## 0.2.0
+
 ### Added
 
 - Resolve the project before every command: the nearest config walking
