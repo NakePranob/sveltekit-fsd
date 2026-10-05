@@ -13,6 +13,7 @@ import {
   addTailwindSource,
   appendScript,
   detectKitConfig,
+  detectKitMajor,
   detectPackageManager,
   detectStylesheetImport,
   eslintRestrictsImports,
@@ -22,11 +23,16 @@ import {
   installDependencies,
   kitConfigPatch,
   kitConfigSnippet,
+  packageImportsStatus,
   patchEslintConfig,
   patchLayoutStyleImport,
+  patchPackageImports,
   patchPrettierTailwindStylesheet,
   rootLayoutPath,
+  stylesheetSpecifier,
+  subpathImport,
   toPosix,
+  usesSubpathImports,
   writeAgentSkill,
 } from "../utils/project";
 import { cliVersion } from "../utils/version";
@@ -58,16 +64,20 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   // its config is somewhere this CLI cannot find: every move below depends on
   // `kit.files` being repointed, and a half-initialised tree whose routes moved
   // while the config did not is a project that no longer builds.
-  const kitConfig = detectKitConfig(projectDir);
+  const kitMajor = detectKitMajor(projectDir);
+  const kitConfig = detectKitConfig(projectDir, kitMajor);
   const srcDir = "src";
-  const alias = "@";
+  // Chosen once, here, and recorded: every later command generates imports in
+  // this spelling whatever SvelteKit the project has moved to since. Kit 3
+  // deprecates the `alias` option `@` rests on, so a project started on 3 gets
+  // a package.json subpath import instead — and those have to start with `#`.
+  const alias = kitMajor === 3 ? "#" : "@";
+  const subpath = usesSubpathImports(alias);
+  const imports = subpathImport(alias, srcDir);
   const routesDir = `${srcDir}/app/routes`;
   const appTemplate = `${srcDir}/app/index.html`;
   const stylesheet = `${srcDir}/app/styles/app.css`;
-  // The same file as the alias spells it. `@/*` maps to `src/*`, so the `src/`
-  // prefix is exactly what the alias replaces — writing `@/src/app/...` into an
-  // import resolves to `src/src/app/...`, which is nothing.
-  const aliasStylesheet = stylesheet.slice(srcDir.length + 1);
+  const styleSpecifier = stylesheetSpecifier(routesDir, stylesheet, alias, srcDir);
   const packageManager = detectPackageManager(projectDir);
 
   // Worked out now and written after the moves. A config this cannot patch has
@@ -77,10 +87,19 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   const kitSource = kitConfigPatch(projectDir, kitConfig, kitOptions);
   if (kitSource === "manual") {
     throw new Error(
-      `could not patch ${kitConfig.file} safely — it already sets \`files\` or \`alias\` (a second key would silently override one of them), ` +
+      `could not patch ${kitConfig.file} safely — it already sets ${subpath ? "`files`" : "`files` or `alias`"} (a second key would silently override ours), ` +
         `or has no ${kitConfig.style === "vite" ? "`sveltekit({ ... })` options object" : "`kit: { ... }` block"} to add to. Nothing was moved.\n` +
         `Add this ${kitConfig.style === "vite" ? "inside the `sveltekit({ ... })` options" : "inside `kit: { ... }`"}, merged with what is there, then re-run \`sveltekit-fsd init\`:\n` +
         kitConfigSnippet(kitOptions)
+    );
+  }
+  // The same rule for the import map: an `#/*` that already means something
+  // else is the user's, and every generated import would resolve through it.
+  if (subpath && packageImportsStatus(projectDir, imports) === "manual") {
+    throw new Error(
+      `package.json already maps \`${alias}/*\` in "imports" to something else, and every import this CLI generates goes through it. Nothing was moved.\n` +
+        `Make it this, then re-run \`sveltekit-fsd init\`:\n` +
+        `  "imports": { ${Object.entries(imports).map(([key, target]) => `"${key}": "${target}"`).join(", ")} }`
     );
   }
 
@@ -159,8 +178,10 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     console.log(pc.bold("\nThis will:"));
     for (const line of [
       `move ${pc.cyan(currentRoutes + "/")} to ${pc.cyan(routesDir + "/")} and ${pc.cyan(currentAppHtml ?? `${srcDir}/app.html`)} to ${pc.cyan(appTemplate)} — routing becomes part of the FSD app layer`,
-      `point ${pc.cyan(kitConfig.file)} at both, and alias ${pc.cyan(`${alias}/*`)} to ./${srcDir}/* ${pc.dim("(tsconfig.json is left alone — SvelteKit generates that half)")}`,
-      `leave ${pc.cyan(`${srcDir}/lib/`)} and ${pc.cyan("$lib")} exactly as they are — ${pc.dim("this CLI moves none of your code; shared/ is where the layers' shared code goes")}`,
+      subpath
+        ? `point ${pc.cyan(kitConfig.file)} at both, and map ${pc.cyan(`${alias}/*`)} to ./${srcDir}/*/index.ts in ${pc.cyan("package.json")} "imports" ${pc.dim("(a subpath import — SvelteKit 3 deprecates `alias`; tsconfig.json is left alone)")}`
+        : `point ${pc.cyan(kitConfig.file)} at both, and alias ${pc.cyan(`${alias}/*`)} to ./${srcDir}/* ${pc.dim("(tsconfig.json is left alone — SvelteKit generates that half)")}`,
+      `leave ${pc.cyan(`${srcDir}/lib/`)} and ${pc.cyan(kitMajor === 3 ? "#lib" : "$lib")} exactly as they are — ${pc.dim("this CLI moves none of your code; shared/ is where the layers' shared code goes")}`,
       movesStylesheet
         ? `move ${pc.cyan(styleBefore!)} to ${pc.cyan(stylesheet)} and repoint the import in ${rootLayoutPath(routesDir)}`
         : hasTailwind
@@ -170,7 +191,9 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
         ? pc.yellow("leave your ESLint config alone — it already restricts imports, so the FSD boundary rules are not added")
         : `add ${pc.cyan(ESLINT_FSD_FILE)} — the import boundary as ESLint rules, so a wrong-way import is flagged in your editor (no new dependencies)`,
       `add steiger + the FSD plugin and a steiger.config.ts for the whole-tree checks ESLint cannot make, then chain both into the lint script`,
-      `add ${pc.cyan("components.json")} so \`shadcn-svelte add\` writes into ${srcDir}/shared/ui`,
+      subpath
+        ? pc.dim(`write no components.json — shadcn-svelte resolves its aliases through the ${alias} import map and would write into the wrong directory`)
+        : `add ${pc.cyan("components.json")} so \`shadcn-svelte add\` writes into ${srcDir}/shared/ui`,
       `write ${pc.cyan("docs/fsd.md")}, a ${pc.cyan(".agents/skills/sveltekit-fsd")} and a ${pc.cyan(".agents/skills/feature-sliced-design")} skill at the repository root (symlinked from ${pc.cyan(".claude/skills/")}), and point AGENTS.md at them`,
       hooks === false
         ? pc.dim("write no git hook (--no-hooks)")
@@ -200,13 +223,17 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
 
   if (kitSource !== "already") {
     fs.writeFileSync(path.join(projectDir, kitConfig.file), kitSource);
-    written.push(`${kitConfig.file} (kit.files + kit.alias)`);
+    written.push(`${kitConfig.file} (${subpath ? "kit.files" : "kit.files + kit.alias"})`);
+  }
+  if (subpath && patchPackageImports(projectDir, imports) === "patched") {
+    written.push(`package.json (imports: ${alias}/*)`);
   }
 
   const context = {
     srcDir,
     routesDir,
     alias,
+    kit3: kitMajor === 3,
     locale,
     stylesheet,
     copy: copyFor(locale),
@@ -238,12 +265,12 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     await fs.move(path.join(projectDir, styleAfterRoutesMove!), path.join(projectDir, stylesheet));
     written.push(`${stylesheet} ${pc.dim(`(moved from ${styleBefore})`)}`);
     if (hasTailwind) addTailwindSource(path.join(projectDir, stylesheet), context.cssSource);
-    if (patchLayoutStyleImport(projectDir, rootLayoutPath(routesDir), styleImport!, alias, aliasStylesheet)) {
+    if (patchLayoutStyleImport(projectDir, rootLayoutPath(routesDir), styleImport!, styleSpecifier)) {
       written.push(`${rootLayoutPath(routesDir)} (stylesheet import)`);
     } else {
       console.log(
         pc.yellow(
-          `\ncould not repoint the stylesheet import in ${rootLayoutPath(routesDir)} — change it to \`import '${alias}/${aliasStylesheet}';\` by hand.`
+          `\ncould not repoint the stylesheet import in ${rootLayoutPath(routesDir)} — change it to \`import '${styleSpecifier}';\` by hand.`
         )
       );
     }
@@ -277,17 +304,22 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
         // defaults put components under $lib — outside the layers entirely. The
         // aliases here send them into shared/ui and shared/lib instead. Skipped
         // if the project already has one; that file is the user's decision.
+        //
+        // Not on the # spelling: shadcn-svelte resolves a # alias through the
+        // import map by resolving `<alias>/noop.js` and keeping the directory,
+        // and a map that ends every specifier in /index.ts turns that into
+        // `shared/ui/noop.js/` — it writes the components there.
         {
           template: "init/components.json.hbs",
           output: "components.json",
-          when: () => absent("components.json", "your shadcn-svelte aliases, not ours"),
+          when: () => !subpath && absent("components.json", "your shadcn-svelte aliases, not ours"),
         },
       ],
       context
     ))
   );
 
-  if (!movesStylesheet && hasTailwind && addLayoutImport(projectDir, rootLayoutPath(routesDir), `import '${alias}/${aliasStylesheet}';`)) {
+  if (!movesStylesheet && hasTailwind && addLayoutImport(projectDir, rootLayoutPath(routesDir), `import '${styleSpecifier}';`)) {
     written.push(`${rootLayoutPath(routesDir)} (stylesheet import)`);
   }
 
@@ -295,12 +327,13 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   // boundary file of ours to spread in.
   const eslintPatch = ownsImportRules ? "already" : patchEslintConfig(projectDir, ESLINT_FSD_FILE);
   if (eslintPatch === "patched") written.push("eslint.config.js (spreads the FSD boundary rules)");
-  // `svelte-kit sync` first, and not for tidiness: steiger resolves the `@/`
-  // alias through the project's tsconfig, which does nothing but extend the
-  // generated `.svelte-kit/tsconfig.json`. That directory is gitignored, so on a
-  // fresh clone — or after anyone cleans build output — it is not there, and
-  // steiger does not degrade, it dies with a MODULE_NOT_FOUND stack trace. The
-  // project's own `check` script syncs for the same reason.
+  // `svelte-kit sync` first, and not for tidiness: steiger resolves imports
+  // through the project's tsconfig, which does nothing but extend the one
+  // SvelteKit generates — `.svelte-kit/tsconfig.json` on 2, `$app/tsconfig` in
+  // node_modules on 3. Neither exists on a fresh clone, or after anyone cleans
+  // build output, and steiger does not degrade without it, it dies with a
+  // MODULE_NOT_FOUND stack trace. The project's own `check` script syncs for
+  // the same reason.
   if (appendScript(projectDir, "lint", `svelte-kit sync && steiger ./${srcDir}`)) {
     written.push("package.json (lint script)");
   }
@@ -335,6 +368,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   // lines nobody typed. Best-effort, so a project with no prettier is unaffected.
   await formatFiles(projectDir, [
     kitConfig.file,
+    "package.json",
     "eslint.config.js",
     "components.json",
     "steiger.config.ts",
@@ -373,7 +407,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   }
   if (fs.existsSync(path.join(projectDir, srcDir, "lib"))) {
     left.push(
-      `${srcDir}/lib/ ${pc.dim("— SvelteKit's own $lib directory. steiger ignores it; shared/ is where the layers' shared code goes, so do not grow this one.")}`
+      `${srcDir}/lib/ ${pc.dim(`— SvelteKit's own ${kitMajor === 3 ? "#lib" : "$lib"} directory. steiger ignores it; shared/ is where the layers' shared code goes, so do not grow this one.`)}`
     );
   }
   if (left.length > 0) {
@@ -395,6 +429,15 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     console.log(pc.yellow(`\nrun \`${packageManager} install\` to install: ${added.join(", ")}`));
   }
 
+  if (subpath) {
+    console.log(
+      pc.dim(
+        `\nno components.json: shadcn-svelte resolves its aliases through the ${alias} import map, and this map sends every specifier to an index.ts — ` +
+          "it would write components into a directory named noop.js. Write one by hand if you use shadcn-svelte; see the README."
+      )
+    );
+  }
+
   if (!hasTailwind) {
     console.log(
       pc.yellow("\nthis project has no Tailwind, and everything this CLI generates is styled with Tailwind utility classes.") +
@@ -411,7 +454,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   }
 
   console.log(
-    `\n${pc.bold("Next:")} ${pc.cyan(`${packageManager} run check`)} ${pc.dim("(it syncs SvelteKit, which is what makes the alias resolve)")}, then ` +
+    `\n${pc.bold("Next:")} ${pc.cyan(`${packageManager} run check`)} ${pc.dim(subpath ? "(it syncs SvelteKit's generated types first)" : "(it syncs SvelteKit, which is what makes the alias resolve)")}, then ` +
       `${pc.cyan("sveltekit-fsd generate page <name>")}, ${pc.cyan("sveltekit-fsd add error-handling")}, ` +
       `${pc.cyan("sveltekit-fsd add auth")}`
   );

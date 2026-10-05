@@ -1,6 +1,9 @@
 import axios, { type CreateAxiosDefaults, type InternalAxiosRequestConfig } from "axios";
 
-import { getAccessToken, setAccessToken } from "{{alias}}/shared/auth/access-token";
+// Straight to the module, not through shared/auth's index: once `add auth` has
+// run, that index also re-exports the session code, which imports shared/api —
+// a cycle. Relative, because both files are in shared, one segment over.
+import { getAccessToken, setAccessToken } from "../auth/access-token";
 import { API_URL } from "{{alias}}/shared/config";
 
 import { toApiError } from "./api-error";

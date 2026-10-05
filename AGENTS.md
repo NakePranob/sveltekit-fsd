@@ -47,8 +47,13 @@ wrong, both read fine. steiger also prints its findings to **stderr** and exits
 read stdout would pass against a linter that said nothing at all.
 
 ```bash
-npm run test:integration   # slow, networked: real sv create + install + check + lint + build
+npm run test:integration                       # slow, networked: real sv create + install + check + lint + build
+SV_VERSION=0.17.1 npm run test:integration     # the same against SvelteKit 2
 ```
+
+`sv@latest` only scaffolds SvelteKit 3; 0.17.1 is the last `sv` that makes a
+Kit 2 project, so CI runs the integration job once per major. On Kit 3 it also
+fails on any SvelteKit deprecation warning from `check` or the dev server.
 
 The `version` CI job runs on pull requests into `main`. It requires the root
 package version to increase from the pull request base and requires
@@ -83,16 +88,46 @@ order — create, install, init — does not hit it.
 
 ## What SvelteKit changes
 
-Ported code from nextjs-fsd is wrong by default in these places:
+Ported code from nextjs-fsd is wrong by default in these places — and since
+SvelteKit 3, so is code that is right for SvelteKit 2. Both majors are
+supported, from one code path with the major as an input:
+
+- **Two majors, two decisions taken at different times.** `detectKitMajor` reads
+  the installed `@sveltejs/kit` first, the declared range second, and refuses
+  anything that names no version. The *import spelling* is decided once, by
+  `init`, and recorded as `alias` (`@` on 2, `#` on 3); the *APIs* — env,
+  `goto` options — are decided by `add` every time it runs, so a project
+  upgraded after `init` gets the APIs it runs now and the spelling it started
+  with. Templates branch on `{{#if kit3}}`. Kit 2 output of every branched
+  template should stay byte-identical when a Kit 3 change lands.
 
 - **Routing lives inside the app layer.** `kit.files.routes` points at
   `src/app/routes`, so the FSD layers keep their real names (`app`, `pages`) —
   no `_app`/`_pages` prefixes, and no `fsd/typo-in-layer-name` override.
 - **The SvelteKit config is in one of two files, and only one is read.**
-  `@sveltejs/kit` loads from the Vite config first and falls back to
+  SvelteKit 2 loads from the Vite config first and falls back to
   `svelte.config.js`. `detectKitConfig` picks the live one. Writing to the other
   is a silent failure: correct values, nothing reads them, routes have moved.
-- **No `tsconfig.json` patching.** SvelteKit generates the alias half itself.
+  SvelteKit 3 reads only the Vite config and *throws* if `svelte.config.*`
+  exists, so on 3 that file is a refusal, never a target.
+- **No `tsconfig.json` patching.** On 2, SvelteKit generates the alias half
+  itself; on 3, TypeScript reads package.json `imports` directly.
+- **SvelteKit 3 deprecates `alias`**, so a Kit 3 project imports through
+  `"#/*": "./src/*/index.ts"` in package.json. The `index.ts` is load-bearing: a
+  subpath import never resolves a directory to its index, so `"./src/*"` leaves
+  `#/pages/login` resolving to nothing. Anything that has to name a single file
+  — the root layout's stylesheet, `client.ts`'s access token — is relative. And
+  shadcn-svelte resolves `#` aliases into `shared/ui/noop.js/` through that map,
+  which is why Kit 3 gets no `components.json`.
+- **A `#` in a `no-restricted-imports` pattern is a comment.** The patterns are
+  gitignore syntax. Unescaped, `#/pages/**` matches nothing and the boundary is
+  inert while looking fine — `eslint.fsd.js.hbs` writes `\\#` in a template
+  literal, which reaches ESLint as `\#`. And a backslash right before `{{`
+  escapes the mustache in Handlebars, which is why that branch spells `#`
+  literally instead of using `{{alias}}`.
+- **SvelteKit 3 has no types for `$env/*`.** Variables are declared in
+  `src/env.ts` with `defineEnvVars` and read from `$app/env/public` / `private`.
+  `add error-handling` creates that file or patches the user's (`patchEnvFile`).
 - **There is no `metadata` to re-export.** A page owns its `<svelte:head>`.
 - **There is no `"use client"`.** The `--client` flag from nextjs-fsd has no
   analogue and is not replaced by one.
@@ -104,12 +139,12 @@ Ported code from nextjs-fsd is wrong by default in these places:
   `query.data`, not `$query.data`. The v5 store API is a different major.
   `createQuery` / `createMutation` / `useQueryClient` only work during component
   initialisation.
-- **Anything that resolves the `@/` alias needs `svelte-kit sync` first.** The
-  project's `tsconfig.json` does nothing but extend the generated
-  `.svelte-kit/tsconfig.json`, which is gitignored — so on a fresh clone steiger
-  does not degrade, it dies with a `MODULE_NOT_FOUND` stack trace out of
-  tsconfck. The generated `lint` script syncs before steiger for that reason,
-  the same way SvelteKit's own `check` script does.
+- **steiger needs `svelte-kit sync` first.** The project's `tsconfig.json` does
+  nothing but extend the one SvelteKit generates — `.svelte-kit/tsconfig.json`
+  on 2 (gitignored), `$app/tsconfig` in `node_modules` on 3 — so on a fresh
+  clone steiger does not degrade, it dies with a `MODULE_NOT_FOUND` stack trace
+  out of tsconfck. The generated `lint` script syncs before steiger for that
+  reason, the same way SvelteKit's own `check` script does.
 - **A segment with one file and no `index.ts` is a steiger error.** It is why
   `add error-handling` appends to `shared/auth/index.ts` for the access token it
   writes there, months before `add auth` may run. Any new `add` that drops a
@@ -117,7 +152,9 @@ Ported code from nextjs-fsd is wrong by default in these places:
 - **`goto()` goes through `resolve()`** from `$app/paths`, or takes a value
   typed `ResolvedPathname`. `svelte/no-navigation-without-resolve` is an *error*
   in a stock `sv create` ESLint config, so a bare string means generated code
-  that fails the project's own lint on day one.
+  that fails the project's own lint on day one. Replacing history is
+  `replace: true` on 3 and `replaceState: true` on 2 — 2 has no `replace`, and
+  3 deprecates `replaceState`.
 
 ## Patching someone else's files
 

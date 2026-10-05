@@ -6,33 +6,101 @@ the thing they are avoiding.
 
 ## Which config file `init` patches
 
-`init` writes `kit.files` and `kit.alias` into **either** `vite.config.ts` or
-`svelte.config.js`, whichever one is live — never both, never a fixed one.
+On SvelteKit 2, `init` writes `kit.files` and `kit.alias` into **either**
+`vite.config.ts` or `svelte.config.js`, whichever one is live — never both,
+never a fixed one.
 
-That is not a matter of taste. SvelteKit loads its config from the Vite config
+That is not a matter of taste. SvelteKit 2 loads its config from the Vite config
 *first* and only falls back to `svelte.config.js`. Recent `sv create` writes no
 `svelte.config.js` at all; projects made before that have the opposite shape.
 Writing to the wrong one leaves a file with correct values that nothing reads,
 and routes that moved with nothing pointing at them.
 
-If the live config already sets `files` or `alias`, `init` stops before moving
-anything and prints the block to merge in by hand. A second key of the same name
-is not an error in JavaScript — the later one wins — so adding ours next to
-yours would silently drop one of them. Merge it, then run `init` again.
+SvelteKit 3 settles it: config lives in the `sveltekit({ ... })` options in the
+Vite config, and a `svelte.config.js` is an error SvelteKit refuses to start
+with. So on 3, `init` patches the Vite config, and refuses a project whose only
+config is `svelte.config.js` rather than patching a file nothing reads — `npx sv
+migrate sveltekit-3` moves it. It writes `files` and no `alias`; see
+[below](#why-sveltekit-3-projects-import-through--not-).
+
+Which major a project is on comes from the installed `@sveltejs/kit`, or from
+the declared range when nothing is installed yet. A range that names no version
+(`latest`, `workspace:^`) is a refusal, not a guess.
+
+If the live config already sets `files` — or on 2, `alias` — `init` stops before
+moving anything and prints the block to merge in by hand. A second key of the
+same name is not an error in JavaScript — the later one wins — so adding ours
+next to yours would silently drop one of them. Merge it, then run `init` again.
 
 ## `tsconfig.json` is not touched
 
-SvelteKit writes `kit.alias` into the generated `.svelte-kit/tsconfig.json` that
-yours extends, so Vite, `svelte-check`, your editor and steiger all resolve `@/`
-from one place. Adding `paths` to your own `tsconfig.json` would make a second
-source of truth for the same mapping.
+On SvelteKit 2, SvelteKit writes `kit.alias` into the generated
+`.svelte-kit/tsconfig.json` that yours extends, so Vite, `svelte-check`, your
+editor and steiger all resolve `@/` from one place. On 3, TypeScript reads the
+package.json `imports` map itself, as Vite does. Either way, adding `paths` to
+your own `tsconfig.json` would make a second source of truth for the same
+mapping.
+
+## Why SvelteKit 3 projects import through `#/`, not `@/`
+
+SvelteKit 3 deprecates the `alias` option and prints a warning on every config
+load, with removal to follow. The replacement it points at is a package.json
+subpath import — and those have to start with `#`. So a project initialised on
+SvelteKit 3 gets:
+
+```json
+"imports": { "#/*": "./src/*/index.ts" }
+```
+
+The `index.ts` on the end is the part that is not obvious. A subpath import
+never resolves a directory to its index the way `alias` did. These were tried
+against a real `sv create` project before choosing:
+
+| mapping | written as | result |
+|---|---|---|
+| `"#/*": "./src/*"` | `#/shared/api` | does not resolve — `svelte-check` reports every import |
+| `"#/*": "./src/*"` | `#/shared/api/index.ts` | resolves, but every import grows `/index.ts`, and the boundary's "one segment past the layer is the slice" stops holding |
+| `"#/*": "./src/*/index.ts"` | `#/shared/api` | resolves in `svelte-check`, Vite build and dev, vitest, steiger and ESLint |
+
+The last one also means a path *into* a slice resolves to nothing:
+`#/pages/login/ui/form.svelte` becomes `.../form.svelte/index.ts`. The public-API
+rule is enforced by the resolver before either linter sees it. The two imports
+that need a single file — the stylesheet in the root layout, the access token in
+the API client — are relative, which is the right form for both anyway: neither
+crosses a layer.
+
+The spelling is chosen at `init` and recorded in `sveltekit-fsd.config.json`. A
+project initialised on 2 and upgraded keeps `@/` — it still works on 3, with the
+warning — because rewriting every import in somebody's project is not something
+`generate` should do on the side.
+
+## Why the ESLint boundary escapes `#`
+
+`no-restricted-imports` patterns are gitignore syntax, and in gitignore a line
+starting with `#` is a comment. An unescaped `#/pages/**` does not match
+`#/pages/dashboard` — it matches nothing. The config loads, ESLint stays quiet,
+and the boundary reads exactly like one that works. That was checked, not
+assumed: an upward import that `\#/pages/**` reports, `#/pages/**` lets through.
+The integration test's boundary probe writes its import in the project's own
+spelling so it would catch this coming back.
+
+## Why SvelteKit 3 projects get no `components.json`
+
+shadcn-svelte 1.7 resolves a `#` alias through the import map by resolving
+`<alias>/noop.js` and keeping the directory. Through a map that ends every
+specifier in `/index.ts`, `#/shared/ui` comes out as `src/shared/ui/noop.js` —
+and `shadcn-svelte add button` writes `src/shared/ui/noop.js/button/`. An extra
+map entry just for shadcn's roots would stop `#/shared/ui/button` resolving for
+application code. So on 3 `init` writes none, and says so.
 
 ## Two departures from the official FSD SvelteKit guide
 
 The [official guide](https://feature-sliced.design/docs/guides/tech/with-sveltekit)
 sets two more options. This CLI does not.
 
-**`files.lib: 'src'`** would point `$lib` at the same tree as `@`. It is the
+**`files.lib: 'src'`** would point `$lib` at the same tree as `@`. (SvelteKit 3
+removed the option, and `#lib` is a package.json import there; the reasoning is
+the same.) It is the
 tidier end state — one name per module — but getting there means moving
 everything in `src/lib/` and rewriting the `$lib/` imports that named it,
 including the favicon import in the layout `sv create` just wrote. `init` moves

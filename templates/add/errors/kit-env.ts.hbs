@@ -1,0 +1,10 @@
+import { defineEnvVars } from "@sveltejs/kit/env";
+
+// Every environment variable this app reads, declared once. SvelteKit generates
+// the types of `$app/env/public` and `$app/env/private` from this object and
+// checks the values when the app starts — so a variable that is missing or
+// malformed fails at startup, by name, instead of later as an `undefined` in a
+// request URL.
+export const variables = defineEnvVars({
+  {{envDeclaration}},
+});

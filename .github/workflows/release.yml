@@ -73,7 +73,13 @@ jobs:
       # receive the release tag. A failed gate leaves main and the registry
       # release tag and registry untouched, so the run can be retried safely.
       - run: npm run verify
+      # Once per supported SvelteKit major — see the integration matrix in ci.yml.
       - run: npm run test:integration
+        env:
+          SV_VERSION: latest
+      - run: npm run test:integration
+        env:
+          SV_VERSION: 0.17.1
 
       - name: Create or reuse the annotated release tag
         env:

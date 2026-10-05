@@ -36,10 +36,22 @@ jobs:
   # what the smoke test structurally cannot — a dependency range that does not
   # resolve, generated code that does not type-check against the real Svelte and
   # TanStack Query, and a SvelteKit release that changes behaviour under us.
-  # One OS is enough; this is about the toolchain, not paths.
+  # One OS is enough; this is about the toolchain, not paths. One leg per
+  # supported SvelteKit major, because the generated code differs between them
+  # and `sv@latest` only scaffolds the newest: 0.17.1 is the last `sv` that
+  # makes a SvelteKit 2 project.
   integration:
+    name: integration (SvelteKit ${{ matrix.kit }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kit: 3
+            sv: latest
+          - kit: 2
+            sv: 0.17.1
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -56,6 +68,21 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:integration
+        env:
+          SV_VERSION: ${{ matrix.sv }}
+
+  # Branch protection requires one check named `integration`, and the matrix
+  # above reports one per major instead — so without this, that check waits
+  # forever. Green only when every leg is green. `always()` is what makes it
+  # red rather than skipped when a leg fails: a skipped required check counts
+  # as passing.
+  integration-result:
+    name: integration
+    if: always()
+    needs: integration
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.integration.result }}" = success
 
   # Every merge into main is a release input for this package. Check the exact
   # pull request base, rather than the last tag: a second PR must still bump

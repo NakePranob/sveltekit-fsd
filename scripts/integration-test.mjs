@@ -20,6 +20,16 @@ const cli = path.join(repo, "bin", "sveltekit-fsd.js");
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sveltekit-fsd-integration-"));
 const app = path.join(dir, "app");
 
+// Which `sv` scaffolds the app, and so which SvelteKit major is under test:
+// `latest` makes a Kit 3 project; 0.17.1 is the last `sv` that makes a Kit 2 one.
+// CI runs both.
+const svVersion = process.env.SV_VERSION ?? "latest";
+
+// What SvelteKit 3 prints when a project leans on an API it deprecated. A fresh
+// project this CLI wrote must not trip any of them — `alias` is the option the
+// whole import spelling used to rest on, and it is slated for removal.
+const KIT3_DEPRECATIONS = ["config_option_deprecated_alias", "env_module_deprecated"];
+
 const step = (what) => console.log(`\n▸ ${what}`);
 
 function run(command, args, cwd = app) {
@@ -37,10 +47,10 @@ function capture(command, args, cwd = app) {
   return { status: result.status, output: `${result.stdout ?? ""}${result.stderr ?? ""}` };
 }
 
-step("sv create");
+step(`sv@${svVersion} create`);
 run(
   "npx",
-  ["-y", "sv@latest", "create", "app", "--template", "minimal", "--types", "ts",
+  ["-y", `sv@${svVersion}`, "create", "app", "--template", "minimal", "--types", "ts",
    "--add", "prettier", "eslint", "tailwindcss=plugins:none", "vitest=usages:unit", "--no-install"],
   dir
 );
@@ -69,18 +79,26 @@ if (fs.existsSync(path.join(app, ".claude/settings.json")) || fs.existsSync(path
 step("format the files init wrote before prettier existed");
 run("npx", ["prettier", "--write", "."]);
 
+const kitMajor = Number(JSON.parse(fs.readFileSync(path.join(app, "node_modules/@sveltejs/kit/package.json"), "utf8")).version.split(".")[0]);
+const alias = JSON.parse(fs.readFileSync(path.join(app, "sveltekit-fsd.config.json"), "utf8")).alias;
+console.log(`\n  SvelteKit ${kitMajor}, imports spelled ${alias}/`);
+
 step("svelte-check — this is the typecheck, and it needs svelte-kit sync first");
-run("npm", ["run", "check"]);
+const check = capture("npm", ["run", "check"]);
+if (check.status !== 0) throw new Error(`npm run check failed (exit ${check.status})`);
+if (kitMajor === 3) failOnDeprecations("npm run check", check.output);
 
 step("eslint — the FSD boundary, plus the project's own rules");
 run("npx", ["eslint", "."]);
 
 step("the boundary rules have to bite, not just load");
 // A config that loads and matches nothing reads exactly like one that works.
+// In the project's own spelling: on `#`, an unescaped pattern is a gitignore
+// comment, and a probe written with `@/` would never have noticed.
 fs.mkdirSync(path.join(app, "src/shared/lib"), { recursive: true });
 fs.writeFileSync(
   path.join(app, "src/shared/lib/boundary-probe.ts"),
-  'import { DashboardPage } from "@/pages/dashboard";\n\nexport const probe = DashboardPage;\n'
+  `import { DashboardPage } from "${alias}/pages/dashboard";\n\nexport const probe = DashboardPage;\n`
 );
 const probe = capture("npx", ["eslint", "src/shared/lib/boundary-probe.ts"]);
 if (probe.status === 0 || !probe.output.includes("no-restricted-imports")) {
@@ -136,6 +154,11 @@ if (!fs.existsSync(path.join(app, "src/entities/loan/ui/loan.svelte"))) {
 
 console.log(`\nintegration: ok\n${app}`);
 
+function failOnDeprecations(where, output) {
+  const hit = KIT3_DEPRECATIONS.filter((code) => output.includes(code));
+  if (hit.length > 0) throw new Error(`${where} printed SvelteKit 3 deprecations: ${hit.join(", ")}`);
+}
+
 /** Starts the dev server, asks it for each route, and fails on anything that is
  *  not a 200 — printing the server's own log, which is where the stack is. */
 async function renderCheck(routes) {
@@ -174,6 +197,9 @@ async function renderCheck(routes) {
         throw new Error(`${route} (${what}) rendered ${response.status}, not 200:\n${log.join("")}`);
       }
     }
+    // The env module is only loaded once a page renders, so this is the first
+    // point its deprecation could show up.
+    if (kitMajor === 3) failOnDeprecations("the dev server", log.join(""));
   } finally {
     try {
       process.kill(-dev.pid, "SIGKILL"); // the group, not just npm

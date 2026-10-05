@@ -27,15 +27,20 @@ const check = (ok, what) => {
   console.error(`  ✗ ${what}`);
 };
 
-function makeFixture(name, { eslint = true, tailwind = true, vitest = false } = {}) {
+// `kit: 3` is the shape `sv@latest create` writes now: a declared ^3 with nothing
+// installed (this repo's node_modules, symlinked in, has no @sveltejs/kit), the
+// #lib subpath imports, and package.json indented with tabs.
+function makeFixture(name, { eslint = true, tailwind = true, vitest = false, kit = 2 } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `sveltekit-fsd-${name}-`));
   const devDependencies = {
-    "@sveltejs/kit": "^2.63.0",
-    svelte: "^5.56.1",
+    "@sveltejs/kit": kit === 3 ? "^3.0.0" : "^2.63.0",
+    svelte: kit === 3 ? "^5.57.1" : "^5.56.1",
     ...(tailwind ? { tailwindcss: "^4.3.0" } : {}),
     ...(vitest ? { vitest: "^4.1.8" } : {}),
   };
-  write(dir, "package.json", JSON.stringify({ name, private: true, type: "module", scripts: {}, devDependencies }, null, 2));
+  const pkg = { name, private: true, type: "module", scripts: {}, devDependencies };
+  if (kit === 3) pkg.imports = { "#lib": "./src/lib/index.js", "#lib/*": "./src/lib/*" };
+  write(dir, "package.json", JSON.stringify(pkg, null, kit === 3 ? "\t" : 2));
   write(
     dir,
     "vite.config.ts",
@@ -221,6 +226,18 @@ check(
 );
 check(/createQuery<[^>]*>\(\(\) => \(\{/.test(read(full, "src/features/checkout/api/checkout.ts")), "query options are a function, so they stay reactive");
 
+// --- the SvelteKit 2 shape --------------------------------------------------
+check(JSON.parse(read(full, "sveltekit-fsd.config.json")).alias === "@", "a Kit 2 project records the @ spelling");
+check(JSON.parse(read(full, "package.json")).imports === undefined, "and gets no package.json import map");
+check(read(full, "components.json").includes('"ui": "@/shared/ui"'), "components.json sends shadcn-svelte into shared/ui");
+check(read(full, "src/shared/config/env.ts").includes('from "$env/dynamic/public"'), "Kit 2 reads the API URL from $env/dynamic/public");
+check(!exists(full, "src/env.ts"), "and writes no src/env.ts, which Kit 2 does not read");
+check(read(full, "src/pages/login/ui/login-form.svelte").includes("replaceState: true"), "Kit 2 goto() keeps replaceState — it has no `replace`");
+check(read(full, "src/shared/auth/require-session.svelte.ts").includes("replaceState: true"), "and so does the session guard");
+check(read(full, "src/shared/api/client.ts").includes('from "../auth/access-token"'), "the client reaches the access token relatively, not through shared/auth's index");
+check(!srcText(full).includes('/shared/auth/access-token"'), "and no file reaches it through the alias");
+check(/import alias\s+@\/\* -> \.\/src\/\*\n/.test(run(full, ["config", "show"])), "config show names the alias");
+
 // --- the skills -------------------------------------------------------------
 check(exists(full, ".agents/skills/sveltekit-fsd/SKILL.md"), "the CLI skill is written");
 check(exists(full, ".agents/skills/feature-sliced-design/SKILL.md"), "the FSD methodology skill is written");
@@ -259,21 +276,7 @@ for (const doc of [
 }
 
 // --- nothing a template should never emit -----------------------------------
-for (const file of generatedFiles(full)) {
-  const contents = fs.readFileSync(file, "utf8");
-  // posix, because this is compared against a "/" path below and `path.relative`
-  // hands back backslashes on Windows — where the comparison would silently stop
-  // matching and the exemption would swallow the whole tree instead of one skill.
-  const relative = path.relative(full, file).split(path.sep).join("/");
-  // Only the methodology skill is exempt — it is copied byte-for-byte, Vue
-  // examples and all. `.agents/skills/sveltekit-fsd/SKILL.md` IS rendered, and
-  // skipping the whole `.agents/` tree would have exempted the one generated
-  // file most likely to carry an unrendered expression.
-  if (relative.includes("skills/feature-sliced-design/")) continue;
-  if (relative.startsWith(".claude/")) continue; // the symlinked copy of both
-  check(!contents.includes("{{"), `no unrendered Handlebars in ${relative}`);
-  check(!contents.includes("\r\n"), `no CRLF in ${relative}`);
-}
+checkNothingUnrendered(full);
 
 // --- extending, not rewriting ----------------------------------------------
 const untouched = read(full, "src/features/checkout/ui/checkout.svelte");
@@ -368,6 +371,103 @@ check(
 check(exists(owned, "src/routes/+layout.svelte") && exists(owned, "src/app.html"), "and moves nothing");
 check(!exists(owned, "sveltekit-fsd.config.json"), "and writes nothing");
 
+// --- SvelteKit 3 -------------------------------------------------------------
+// The shape `sv@latest create` makes now. Kit 3 deprecates `alias`, has no
+// types for `$env/*`, renames goto's `replaceState`, and refuses svelte.config.js.
+console.log("smoke: SvelteKit 3 project");
+const kit3 = makeFixture("kit3", { vitest: true, kit: 3 });
+const kit3Init = run(kit3, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"]);
+run(kit3, ["add", "auth", "-y", "--no-install"]);
+run(kit3, ["generate", "page", "dashboard", "--auth", "--title", "Dashboard", "--defaults"]);
+run(kit3, ["generate", "layout", "admin", "--guard", "--defaults"]);
+run(kit3, ["generate", "slice", "features", "checkout", "--segments", "ui,model,api,lib", "--errors"]);
+
+check(JSON.parse(read(kit3, "sveltekit-fsd.config.json")).alias === "#", "a Kit 3 project records the # spelling");
+const kit3Pkg = read(kit3, "package.json");
+check(JSON.parse(kit3Pkg).imports["#/*"] === "./src/*/index.ts", "the # import map sends every specifier to an index.ts");
+check(JSON.parse(kit3Pkg).imports["#lib"] === "./src/lib/index.js", "sv's own #lib entries survive");
+check(kit3Pkg.includes('\n\t"imports"'), "package.json keeps the tabs it was written with");
+const kit3Vite = read(kit3, "vite.config.ts");
+check(kit3Vite.includes("routes: 'src/app/routes'") && kit3Vite.includes("appTemplate: 'src/app/index.html'"), "files are patched into sveltekit({ ... })");
+check(!kit3Vite.includes("alias"), "and no alias — Kit 3 deprecates it and warns on every config load");
+check(read(kit3, "src/app/routes/+layout.svelte").includes("import '../styles/app.css';"), "the stylesheet import is relative — #/ only resolves an index.ts");
+check(read(kit3, "src/app/routes/dashboard/+page.svelte").includes('from "#/pages/dashboard"'), "routes import pages through #/");
+check(!srcText(kit3).includes('"@/'), "and nothing in src/ spells an import with @/");
+check(read(kit3, "eslint.fsd.js").includes("[`\\\\#/${suffix}`, `\\\\#/**/${suffix}`]"), "the boundary escapes # in both prefixes — unescaped, a gitignore pattern starting with # is a comment");
+check(!exists(kit3, "components.json"), "no components.json — shadcn-svelte would write into shared/ui/noop.js/");
+check(/no components\.json/.test(kit3Init), "and init says why");
+
+check(exists(kit3, "src/env.ts") && /PUBLIC_API_URL: \{[\s\S]*public: true/.test(read(kit3, "src/env.ts")), "src/env.ts declares the API URL, public");
+check(read(kit3, "src/shared/config/env.ts").includes('from "$app/env/public"'), "and the config module reads it from $app/env/public");
+check(!srcText(kit3).includes("$env/"), "no $env/ module anywhere — Kit 3 generates no types for them");
+check(read(kit3, ".env.example").includes("src/env.ts"), ".env.example says where the variable is declared");
+check(read(kit3, "src/pages/login/ui/login-form.svelte").includes("{ replace: true }"), "goto() uses Kit 3's `replace`");
+check(read(kit3, "src/shared/auth/require-session.svelte.ts").includes("{ replace: true }"), "in the session guard too");
+check(!srcText(kit3).includes("replaceState"), "and nothing passes the deprecated replaceState");
+check(read(kit3, "src/shared/api/client.ts").includes('from "../auth/access-token"'), "the client reaches the access token relatively");
+
+for (const doc of ["docs/fsd.md", "AGENTS.md", ".agents/skills/sveltekit-fsd/SKILL.md", "eslint.fsd.js", "steiger.config.ts"]) {
+  const text = read(kit3, doc);
+  check(!/\$lib|kit\.files\.lib|svelte\.config\.js|\.svelte-kit\/tsconfig/.test(text), `${doc} describes Kit 3, not Kit 2`);
+}
+check(read(kit3, "docs/fsd.md").includes('"#/*": "./src/*/index.ts"'), "docs/fsd.md shows the import map");
+check(/import alias\s+#\/\* -> \.\/src\/\*\/index\.ts \(package\.json imports\)/.test(run(kit3, ["config", "show"])), "config show names the import map");
+checkNothingUnrendered(kit3);
+
+const kit3Steiger = spawnBin(kit3, "steiger", ["./src"]);
+check(kit3Steiger.status === 0, `steiger exits 0 on a Kit 3 project (got ${kit3Steiger.status})`);
+check(/insignificant-slice/.test(kit3Steiger.output), "steiger is live on Kit 3 too");
+check(!/✘|error/i.test(kit3Steiger.output), `and reports no errors:\n${kit3Steiger.output}`);
+
+// The import map is the user's file as much as the config is: an #/* that
+// already means something else stops init before anything moves.
+console.log("smoke: a Kit 3 import map init cannot patch safely");
+const kit3Owned = makeFixture("kit3-owned", { kit: 3 });
+const ownedPkg = JSON.parse(read(kit3Owned, "package.json"));
+ownedPkg.imports["#/*"] = "./src/*";
+write(kit3Owned, "package.json", JSON.stringify(ownedPkg, null, "\t"));
+check(
+  fails(kit3Owned, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"], "Nothing was moved"),
+  "init refuses an #/* that already maps elsewhere"
+);
+check(exists(kit3Owned, "src/routes/+layout.svelte") && !exists(kit3Owned, "sveltekit-fsd.config.json"), "and moves and writes nothing");
+
+// Kit 3 throws on svelte.config.js, so patching one would write into a file
+// nothing reads — after the routes had moved.
+console.log("smoke: a Kit 3 project whose only config is svelte.config.js");
+const kit3Legacy = makeFixture("kit3-legacy", { kit: 3 });
+write(kit3Legacy, "vite.config.ts", "import { defineConfig } from 'vite';\n\nexport default defineConfig({ plugins: [] });\n");
+write(kit3Legacy, "svelte.config.js", "export default { kit: {} };\n");
+check(
+  fails(kit3Legacy, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"], "SvelteKit 3 reads its config only from vite.config"),
+  "init refuses svelte.config.js on Kit 3"
+);
+check(exists(kit3Legacy, "src/routes/+layout.svelte"), "and moves nothing");
+
+// A project that already declares its own variables keeps every one of them.
+console.log("smoke: a Kit 3 project with its own src/env.ts");
+const kit3Env = makeFixture("kit3-env", { kit: 3 });
+write(kit3Env, "src/env.ts", "import { defineEnvVars } from '@sveltejs/kit/env';\n\nexport const variables = defineEnvVars({\n\tOTHER: {}\n});\n");
+run(kit3Env, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"]);
+run(kit3Env, ["add", "error-handling", "-y", "--no-install"]);
+const ownEnv = read(kit3Env, "src/env.ts");
+check(ownEnv.includes("OTHER: {}") && ownEnv.includes("PUBLIC_API_URL: {"), "add error-handling adds the API URL beside the project's own variables");
+check(ownEnv.match(/defineEnvVars/g).length === 2, "into the object it already had, not a second one");
+
+// Upgraded after init: the spelling stays what init recorded, the APIs follow
+// the SvelteKit the project runs now.
+console.log("smoke: a Kit 2 project upgraded to Kit 3 after init");
+const upgraded = makeFixture("upgraded");
+run(upgraded, ["init", "--locale", "en", "--no-install", "--no-hooks", "--defaults"]);
+const upgradedPkg = JSON.parse(read(upgraded, "package.json"));
+upgradedPkg.devDependencies["@sveltejs/kit"] = "^3.0.0";
+write(upgraded, "package.json", JSON.stringify(upgradedPkg, null, 2));
+run(upgraded, ["add", "auth", "-y", "--no-install"]);
+run(upgraded, ["generate", "page", "settings", "--defaults"]);
+check(read(upgraded, "src/pages/login/ui/login-form.svelte").includes("{ replace: true }"), "add auth emits the Kit 3 goto option after an upgrade");
+check(read(upgraded, "src/shared/config/env.ts").includes('from "$app/env/public"'), "and the Kit 3 env module");
+check(read(upgraded, "src/app/routes/settings/+page.svelte").includes('from "@/pages/settings"'), "but keeps generating imports in the @ spelling init recorded");
+
 console.log("smoke: minimal project (no eslint, no tailwind, no vitest)");
 const min = makeFixture("min", { eslint: false, tailwind: false });
 const minOut = run(min, ["init", "--locale", "th", "--no-install", "--no-hooks", "--defaults"]);
@@ -386,6 +486,32 @@ if (failures > 0) {
   process.exit(1);
 }
 console.log("\nsmoke: ok");
+
+/** No template leaves an unrendered expression or a CRLF anywhere in the tree. */
+function checkNothingUnrendered(dir) {
+  for (const file of generatedFiles(dir)) {
+    const contents = fs.readFileSync(file, "utf8");
+    // posix, because this is compared against a "/" path below and `path.relative`
+    // hands back backslashes on Windows — where the comparison would silently stop
+    // matching and the exemption would swallow the whole tree instead of one skill.
+    const relative = path.relative(dir, file).split(path.sep).join("/");
+    // Only the methodology skill is exempt — it is copied byte-for-byte, Vue
+    // examples and all. `.agents/skills/sveltekit-fsd/SKILL.md` IS rendered, and
+    // skipping the whole `.agents/` tree would have exempted the one generated
+    // file most likely to carry an unrendered expression.
+    if (relative.includes("skills/feature-sliced-design/")) continue;
+    if (relative.startsWith(".claude/")) continue; // the symlinked copy of both
+    check(!contents.includes("{{"), `no unrendered Handlebars in ${relative}`);
+    check(!contents.includes("\r\n"), `no CRLF in ${relative}`);
+  }
+}
+
+/** The text of every file under `src/`, for assertions about the whole tree. */
+function srcText(dir) {
+  return generatedFiles(path.join(dir, "src"))
+    .map((file) => fs.readFileSync(file, "utf8"))
+    .join("\n");
+}
 
 /** Runs a command that is expected to fail, and says whether it failed for the
  *  stated reason rather than by crashing somewhere else. */
