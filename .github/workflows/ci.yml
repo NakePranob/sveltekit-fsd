@@ -71,6 +71,19 @@ jobs:
         env:
           SV_VERSION: ${{ matrix.sv }}
 
+  # Branch protection requires one check named `integration`, and the matrix
+  # above reports one per major instead — so without this, that check waits
+  # forever. Green only when every leg is green. `always()` is what makes it
+  # red rather than skipped when a leg fails: a skipped required check counts
+  # as passing.
+  integration-result:
+    name: integration
+    if: always()
+    needs: integration
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.integration.result }}" = success
+
   # Every merge into main is a release input for this package. Check the exact
   # pull request base, rather than the last tag: a second PR must still bump
   # from the version that is current when it is opened.
