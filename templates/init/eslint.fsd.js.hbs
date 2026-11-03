@@ -35,6 +35,7 @@ const SLICED = ["pages", "widgets", "features", "entities"];
 // The `#` is escaped, and it has to be: these patterns are gitignore syntax,
 // where a line starting with `#` is a comment. Unescaped, every pattern below
 // matches nothing — the config loads, and the boundary enforces nothing.
+/** @param {string} suffix */
 const forEachPrefix = (suffix) => [`\\#/${suffix}`, `\\#/**/${suffix}`];
 {{else}}
 // One spelling, deliberately. `kit.files.lib` is left at its default, so `$lib`
@@ -44,6 +45,7 @@ const forEachPrefix = (suffix) => [`\\#/${suffix}`, `\\#/**/${suffix}`];
 // The first pattern covers the configured root. The second covers an
 // additional FSD root nested below it, which is what `generate ... --root`
 // creates when a project keeps more than one independently owned layer tree.
+/** @param {string} suffix */
 const forEachPrefix = (suffix) => [`{{alias}}/${suffix}`, `{{alias}}/**/${suffix}`];
 {{/if}}
 
@@ -72,6 +74,7 @@ const insideSlice = {
  * live in that layer's single block — splitting them across blocks silently
  * disables all but the last one to match, and the config still looks right.
  */
+/** @param {string[]} files @param {Array<{ group: string[], message: string }>} patterns */
 function boundaryFor(files, patterns) {
   return {
     files,

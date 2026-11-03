@@ -6,6 +6,21 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## 0.4.0
+
+### Added
+
+- `init` writes one generic `sveltekit-fsd` skill at the repository root. The
+  package-specific paths and rules stay in each package's `AGENTS.md`,
+  `CLAUDE.md`, and `docs/fsd.md`; the skill discovers the target package
+  through `sveltekit-fsd.config.json`. No per-package skill name, hash, or
+  collision logic is needed.
+
+### Fixed
+
+- Generated `eslint.fsd.js` now carries the JSDoc parameter types
+  `svelte-check` needs on SvelteKit 3, instead of reporting implicit `any`.
+
 ## 0.3.0
 
 ### Added

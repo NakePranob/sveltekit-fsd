@@ -12,6 +12,7 @@ import {
   addLayoutImport,
   addTailwindSource,
   appendScript,
+  assertAgentSkillAvailable,
   detectKitConfig,
   detectKitMajor,
   detectPackageManager,
@@ -79,6 +80,16 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   const stylesheet = `${srcDir}/app/styles/app.css`;
   const styleSpecifier = stylesheetSpecifier(routesDir, stylesheet, alias, srcDir);
   const packageManager = detectPackageManager(projectDir);
+  const repoRoot = findRepoRoot(projectDir);
+  const packagePath = toPosix(path.relative(repoRoot, projectDir)) || ".";
+  const skillName = "sveltekit-fsd";
+  const skillDir = path.join(repoRoot, ".agents", "skills", skillName);
+  const agentsPath = toPosix(path.relative(skillDir, path.join(projectDir, "AGENTS.md")));
+  const packageLabel = packagePath === "." ? "repository root" : `\`${packagePath}\` package`;
+  const runFrom = packagePath === "." ? "the repository root" : `the \`${packagePath}\` package root`;
+  const configPath = packagePath === "." ? "sveltekit-fsd.config.json" : `${packagePath}/sveltekit-fsd.config.json`;
+  const configPhrase = packagePath === "." ? "a sveltekit-fsd.config.json at its root" : `\`${packagePath}/sveltekit-fsd.config.json\``;
+  const docsDisplay = packagePath === "." ? "docs/fsd.md" : `${packagePath}/docs/fsd.md`;
 
   // Worked out now and written after the moves. A config this cannot patch has
   // to stop init here, while nothing has moved: routes relocated with no
@@ -174,6 +185,37 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     left.push(`${ESLINT_FSD_FILE} ${pc.dim("— your eslint config already restricts imports")}`);
   }
 
+  // Check the generated skill before the first move. A slug collision must not
+  // leave a half-initialised project with routes already relocated.
+  const skillContext = {
+    srcDir,
+    routesDir,
+    alias,
+    kit3: kitMajor === 3,
+    locale,
+    stylesheet,
+    copy: copyFor(locale),
+    lintCommand: `${packageManager} run lint`,
+    packageManager,
+    skillName,
+    packagePath,
+    packageLabel,
+    runFrom,
+    agentsPath,
+    configPath,
+    configPhrase,
+    docsDisplay,
+    cssSource: toPosix(path.relative(path.dirname(stylesheet), srcDir)),
+    docsFromSkill: toPosix(
+      path.relative(skillDir, path.join(path.resolve(projectDir), "docs", "fsd.md"))
+    ),
+  };
+  assertAgentSkillAvailable(projectDir, skillName, renderTemplate("init/skill.md.hbs", skillContext));
+  const methodologyFiles = readTemplateTree("init/fsd-skill");
+  if (methodologyFiles["SKILL.md"] !== undefined) {
+    assertAgentSkillAvailable(projectDir, "feature-sliced-design", methodologyFiles["SKILL.md"]);
+  }
+
   if (!(opts.yes || opts.defaults)) {
     console.log(pc.bold("\nThis will:"));
     for (const line of [
@@ -194,7 +236,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
       subpath
         ? pc.dim(`write no components.json — shadcn-svelte resolves its aliases through the ${alias} import map and would write into the wrong directory`)
         : `add ${pc.cyan("components.json")} so \`shadcn-svelte add\` writes into ${srcDir}/shared/ui`,
-      `write ${pc.cyan("docs/fsd.md")}, a ${pc.cyan(".agents/skills/sveltekit-fsd")} and a ${pc.cyan(".agents/skills/feature-sliced-design")} skill at the repository root (symlinked from ${pc.cyan(".claude/skills/")}), and point AGENTS.md at them`,
+      `write ${pc.cyan(docsDisplay)}, a ${pc.cyan(`.agents/skills/${skillName}`)} and a ${pc.cyan(".agents/skills/feature-sliced-design")} skill at the repository root (symlinked from ${pc.cyan(".claude/skills/")}), and point AGENTS.md at them`,
       hooks === false
         ? pc.dim("write no git hook (--no-hooks)")
         : `write a ${pc.cyan("commit-msg")} hook that checks the subject is a Conventional Commit — shape only, your language and emoji rules stay yours — and point ${pc.cyan("core.hooksPath")} at it`,
@@ -229,29 +271,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     written.push(`package.json (imports: ${alias}/*)`);
   }
 
-  const context = {
-    srcDir,
-    routesDir,
-    alias,
-    kit3: kitMajor === 3,
-    locale,
-    stylesheet,
-    copy: copyFor(locale),
-    lintCommand: `${packageManager} run lint`,
-    packageManager,
-    // From the stylesheet up to src/ — the whole FSD tree, named for Tailwind
-    // rather than left to wherever automatic detection decides the root is.
-    cssSource: toPosix(path.relative(path.dirname(stylesheet), srcDir)),
-    // The skills live at the repository root and docs/fsd.md lives in the
-    // project — the same directory only in a single-package repo. In a monorepo
-    // the link has to cross back into the workspace.
-    docsFromSkill: toPosix(
-      path.relative(
-        path.join(findRepoRoot(projectDir), ".agents", "skills", "sveltekit-fsd"),
-        path.join(path.resolve(projectDir), "docs", "fsd.md")
-      )
-    ),
-  };
+  const context = skillContext;
 
   // Before anything else is rendered, and that ordering is load-bearing. Moving
   // the stylesheet invalidates the `tailwindStylesheet` pointer in the project's
@@ -488,6 +508,7 @@ function writeAgentDocs(
 ): { written: string[]; formatted: string[] } {
   const written: string[] = [];
   const formatted: string[] = [];
+  const skillName = (context as { skillName?: string }).skillName ?? "sveltekit-fsd";
 
   const add = (name: string, skill: { files: string[]; note?: string }) => {
     formatted.push(...skill.files);
@@ -499,7 +520,7 @@ function writeAgentDocs(
   // Same content as the AGENTS.md section, aimed at the tool that loads skills —
   // an agent's instinct on "add a settings screen" is to hand-write the files,
   // which is exactly what the two linters then report.
-  add("sveltekit-fsd", writeAgentSkill(projectDir, "sveltekit-fsd", {
+  add(skillName, writeAgentSkill(projectDir, skillName, {
     "SKILL.md": renderTemplate("init/skill.md.hbs", context),
   }));
   // The methodology itself, shipped rather than linked: "should this be an

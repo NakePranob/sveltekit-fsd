@@ -111,6 +111,9 @@ export function writeAgentSkill(
 
   const dir = path.join(root, ".agents", "skills", name);
   const written: string[] = [];
+  const skillContent = files["SKILL.md"];
+  if (skillContent !== undefined) assertAgentSkillAvailable(projectDir, name, skillContent);
+
   for (const [relativePath, contents] of Object.entries(files)) {
     const file = path.join(dir, ...relativePath.split("/"));
     fs.ensureDirSync(path.dirname(file));
@@ -119,13 +122,38 @@ export function writeAgentSkill(
   }
 
   const link = path.join(root, ".claude", "skills", name);
+  const linkTarget = path.join("..", "..", ".agents", "skills", name);
+  const existing = lstatOrNull(link);
+
   // lstat, not existsSync: a symlink left pointing at a deleted target is still
   // a thing in the way, and existsSync follows it and says no.
-  if (lstatOrNull(link)) return { files: written };
+  if (existing?.isSymbolicLink()) {
+    const current = fs.readlinkSync(link);
+    if (path.resolve(path.dirname(link), current) === path.resolve(dir)) {
+      return { files: written, note: `${relative(link)} -> ${linkTarget}` };
+    }
+    fs.unlinkSync(link);
+  } else if (existing) {
+    if (!existing.isDirectory()) {
+      return {
+        files: written,
+        note: `${relative(link)} already exists and is not a directory; left untouched`,
+      };
+    }
+    // A real copy from an earlier Windows run must mirror the authoritative
+    // .agents tree, not stay stale forever.
+    for (const [relativePath, contents] of Object.entries(files)) {
+      const file = path.join(link, ...relativePath.split("/"));
+      fs.ensureDirSync(path.dirname(file));
+      fs.writeFileSync(file, contents);
+      written.push(relative(file));
+    }
+    return { files: written, note: `${relative(link)} refreshed real copy` };
+  }
 
   fs.ensureDirSync(path.dirname(link));
   try {
-    fs.symlinkSync(path.join("..", "..", ".agents", "skills", name), link, "dir");
+    fs.symlinkSync(linkTarget, link, "dir");
     return { files: written, note: `${relative(link)} -> .agents/skills/${name}` };
   } catch {
     // Windows refuses symlinks without developer mode or elevation. A second real
@@ -139,6 +167,21 @@ export function writeAgentSkill(
     }
     return { files: written, note: `${relative(link)}/ ${pc.dim("(copied — this OS refused a symlink)")}` };
   }
+}
+
+/**
+ * Refuse to replace a different skill with the same name. Two package paths
+ * can slug to one name, and a generated skill is not disposable user content.
+ */
+export function assertAgentSkillAvailable(projectDir: string, name: string, content: string): void {
+  const root = findRepoRoot(projectDir);
+  const skillFile = path.join(root, ".agents", "skills", name, "SKILL.md");
+  if (!fs.existsSync(skillFile)) return;
+  if (fs.readFileSync(skillFile, "utf8") === content) return;
+  throw new Error(
+    `agent skill "${name}" already exists at ${toPosix(path.relative(projectDir, skillFile))} with different content — ` +
+      `two package paths map to the same skill name; rename the package or remove that skill first`
+  );
 }
 
 function lstatOrNull(target: string): fs.Stats | null {
