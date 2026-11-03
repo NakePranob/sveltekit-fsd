@@ -12,6 +12,7 @@ import {
   addLayoutImport,
   addTailwindSource,
   appendScript,
+  agentSkillName,
   detectKitConfig,
   detectKitMajor,
   detectPackageManager,
@@ -79,6 +80,14 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   const stylesheet = `${srcDir}/app/styles/app.css`;
   const styleSpecifier = stylesheetSpecifier(routesDir, stylesheet, alias, srcDir);
   const packageManager = detectPackageManager(projectDir);
+  const repoRoot = findRepoRoot(projectDir);
+  const packagePath = toPosix(path.relative(repoRoot, projectDir)) || ".";
+  const skillName = agentSkillName(projectDir, repoRoot);
+  const skillDir = path.join(repoRoot, ".agents", "skills", skillName);
+  const agentsPath = toPosix(path.relative(skillDir, path.join(projectDir, "AGENTS.md")));
+  const packageLabel = packagePath === "." ? "repository root" : `\`${packagePath}\` package`;
+  const runFrom = packagePath === "." ? "the repository root" : `the \`${packagePath}\` package root`;
+  const configPath = packagePath === "." ? "sveltekit-fsd.config.json" : `${packagePath}/sveltekit-fsd.config.json`;
 
   // Worked out now and written after the moves. A config this cannot patch has
   // to stop init here, while nothing has moved: routes relocated with no
@@ -239,6 +248,12 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     copy: copyFor(locale),
     lintCommand: `${packageManager} run lint`,
     packageManager,
+    skillName,
+    packagePath,
+    packageLabel,
+    runFrom,
+    agentsPath,
+    configPath,
     // From the stylesheet up to src/ — the whole FSD tree, named for Tailwind
     // rather than left to wherever automatic detection decides the root is.
     cssSource: toPosix(path.relative(path.dirname(stylesheet), srcDir)),
@@ -247,7 +262,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     // the link has to cross back into the workspace.
     docsFromSkill: toPosix(
       path.relative(
-        path.join(findRepoRoot(projectDir), ".agents", "skills", "sveltekit-fsd"),
+        skillDir,
         path.join(path.resolve(projectDir), "docs", "fsd.md")
       )
     ),
@@ -488,6 +503,7 @@ function writeAgentDocs(
 ): { written: string[]; formatted: string[] } {
   const written: string[] = [];
   const formatted: string[] = [];
+  const skillName = (context as { skillName?: string }).skillName ?? "sveltekit-fsd";
 
   const add = (name: string, skill: { files: string[]; note?: string }) => {
     formatted.push(...skill.files);
@@ -499,7 +515,7 @@ function writeAgentDocs(
   // Same content as the AGENTS.md section, aimed at the tool that loads skills —
   // an agent's instinct on "add a settings screen" is to hand-write the files,
   // which is exactly what the two linters then report.
-  add("sveltekit-fsd", writeAgentSkill(projectDir, "sveltekit-fsd", {
+  add(skillName, writeAgentSkill(projectDir, skillName, {
     "SKILL.md": renderTemplate("init/skill.md.hbs", context),
   }));
   // The methodology itself, shipped rather than linked: "should this be an
