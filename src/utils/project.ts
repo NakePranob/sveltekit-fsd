@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs-extra";
 import { execFileSync, execSync } from "child_process";
 import pc from "picocolors";
+import { createHash } from "crypto";
 import { PackageManager } from "../types";
 
 interface PackageJson {
@@ -208,7 +209,10 @@ export function agentSkillName(projectDir: string, repoRoot = findRepoRoot(proje
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  return slug ? `sveltekit-fsd-${slug}` : "sveltekit-fsd";
+  if (slug) return `sveltekit-fsd-${slug}`;
+  // A package path with no ASCII letters/digits still needs a unique name.
+  const digest = createHash("sha1").update(relative).digest("hex").slice(0, 8);
+  return `sveltekit-fsd-${digest}`;
 }
 
 export type KitMajor = 2 | 3;

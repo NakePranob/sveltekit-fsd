@@ -22,6 +22,7 @@ test("agent skill names are package-scoped in a monorepo", () => {
   try {
     assert.equal(agentSkillName(root), "sveltekit-fsd");
     assert.equal(agentSkillName(path.join(root, "web")), "sveltekit-fsd-web");
+    assert.match(agentSkillName(path.join(root, "เว็บ")), /^sveltekit-fsd-[a-f0-9]{8}$/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
