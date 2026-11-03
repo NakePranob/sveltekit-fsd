@@ -6,6 +6,20 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## 0.4.0
+
+### Added
+
+- `init` writes a package-scoped agent skill for a monorepo workspace
+  (`sveltekit-fsd-<package>-<hash>`) while keeping `AGENTS.md` and `CLAUDE.md`
+  in the package. The real skill stays at the repository root under
+  `.agents/skills/`, with the `.claude/skills/` symlink.
+
+### Fixed
+
+- Generated `eslint.fsd.js` now carries the JSDoc parameter types
+  `svelte-check` needs on SvelteKit 3, instead of reporting implicit `any`.
+
 ## 0.3.0
 
 ### Added
