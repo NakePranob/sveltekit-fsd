@@ -10,11 +10,11 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `init` writes a readable package-scoped agent skill for a monorepo workspace
-  (`sveltekit-fsd-<package>`) while keeping `AGENTS.md` and `CLAUDE.md` in the
-  package. The real skill stays at the repository root under `.agents/skills/`,
-  with the `.claude/skills/` symlink. A non-ASCII package path gets a short
-  hash; colliding normalized names fail closed before any project files move.
+- `init` writes one generic `sveltekit-fsd` skill at the repository root. The
+  package-specific paths and rules stay in each package's `AGENTS.md`,
+  `CLAUDE.md`, and `docs/fsd.md`; the skill discovers the target package
+  through `sveltekit-fsd.config.json`. No per-package skill name, hash, or
+  collision logic is needed.
 
 ### Fixed
 

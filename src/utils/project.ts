@@ -2,7 +2,6 @@ import path from "path";
 import fs from "fs-extra";
 import { execFileSync, execSync } from "child_process";
 import pc from "picocolors";
-import { createHash } from "crypto";
 import { PackageManager } from "../types";
 
 interface PackageJson {
@@ -195,24 +194,6 @@ function lstatOrNull(target: string): fs.Stats | null {
 
 export function toPosix(value: string): string {
   return value.split(path.sep).join("/");
-}
-
-/**
- * A package-scoped skill name. A repository-root project keeps the historical
- * `sveltekit-fsd` name; a nested monorepo package gets a readable path suffix.
- * Paths that normalize to the same slug fail closed through
- * assertAgentSkillAvailable rather than receiving an opaque suffix. A path with
- * no ASCII letters/digits still needs a short hash to stay unique.
- */
-export function agentSkillName(projectDir: string, repoRoot = findRepoRoot(projectDir)): string {
-  const relative = toPosix(path.relative(repoRoot, path.resolve(projectDir)));
-  if (!relative) return "sveltekit-fsd";
-  const slug = relative
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  const digest = createHash("sha1").update(relative).digest("hex").slice(0, 8);
-  return slug ? `sveltekit-fsd-${slug}` : `sveltekit-fsd-${digest}`;
 }
 
 export type KitMajor = 2 | 3;

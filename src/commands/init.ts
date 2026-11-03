@@ -12,7 +12,6 @@ import {
   addLayoutImport,
   addTailwindSource,
   appendScript,
-  agentSkillName,
   assertAgentSkillAvailable,
   detectKitConfig,
   detectKitMajor,
@@ -83,7 +82,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   const packageManager = detectPackageManager(projectDir);
   const repoRoot = findRepoRoot(projectDir);
   const packagePath = toPosix(path.relative(repoRoot, projectDir)) || ".";
-  const skillName = agentSkillName(projectDir, repoRoot);
+  const skillName = "sveltekit-fsd";
   const skillDir = path.join(repoRoot, ".agents", "skills", skillName);
   const agentsPath = toPosix(path.relative(skillDir, path.join(projectDir, "AGENTS.md")));
   const packageLabel = packagePath === "." ? "repository root" : `\`${packagePath}\` package`;
