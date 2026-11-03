@@ -46,7 +46,8 @@ test("nested packages write the real skill at the repository root", () => {
     );
     const link = path.join(root, ".claude/skills", skillName);
     assert.ok(fs.lstatSync(link).isSymbolicLink());
-    assert.equal(fs.readlinkSync(link), `../../.agents/skills/${skillName}`);
+    const target = fs.readlinkSync(link).split(path.sep).join("/");
+    assert.equal(target, `../../.agents/skills/${skillName}`);
     assert.ok(!fs.existsSync(path.join(web, ".agents")));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
