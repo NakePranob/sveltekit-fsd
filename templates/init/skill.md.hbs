@@ -6,7 +6,7 @@ description: >
   — including indirect requests such as "add a settings screen", "let staff
   approve loans", "put the dashboard behind login", or "show a proper message
   when the API fails". This project is a SvelteKit app organized with
-  Feature-Sliced Design and has {{configPath}}; check
+  Feature-Sliced Design and has {{configPhrase}}; check
   for that file before assuming this applies. Also use when adding API error
   handling or authentication for the first time. Do NOT use for business logic
   or markup inside a file the CLI already generated, for styling, for a bug fix
@@ -27,7 +27,7 @@ This skill applies to the {{packageLabel}}. Run commands from {{runFrom}}; the
 skill file itself lives at the repository root. The real file is
 `.agents/skills/{{skillName}}/SKILL.md`; `.claude/skills/{{skillName}}` is the
 symlink Claude Code reads. Agents that load neither should follow
-`{{agentsPath}}`, which points at [docs/fsd.md]({{docsFromSkill}}) — the fuller
+`{{agentsPath}}`, which points at [{{docsDisplay}}]({{docsFromSkill}}) — the fuller
 convention, and the source of truth if this file and it ever disagree.
 
 **FSD methodology questions are not this skill's job.** Whether a thing should be
@@ -175,7 +175,7 @@ Breaking one of these is silent — the build passes and the app is wrong.
   belong in `entities/<name>/api/`, reused user actions in
   `features/<name>/api/`, and generic client or CRUD primitives in
   `shared/api/`. If the owner is unclear, keep the code in the consuming page
-  until the boundary is stable. Read docs/fsd.md before creating a layer.{{#if (eq locale "th")}}
+  until the boundary is stable. Read {{docsDisplay}} before creating a layer.{{#if (eq locale "th")}}
 - **Thai copy: no negative tracking, nothing Thai inside `font-mono`, and line
   heights loosened per text size.** Tone marks stack above and below, and a mono
   face loaded with the latin subset has no Thai glyph to render.{{/if}}

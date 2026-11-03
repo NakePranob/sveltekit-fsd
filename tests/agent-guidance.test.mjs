@@ -21,7 +21,12 @@ test("agent skill names are package-scoped in a monorepo", () => {
   const root = tempTree();
   try {
     assert.equal(agentSkillName(root), "sveltekit-fsd");
-    assert.equal(agentSkillName(path.join(root, "web")), "sveltekit-fsd-web");
+    const web = agentSkillName(path.join(root, "web"));
+    const upperWeb = agentSkillName(path.join(root, "WEB"));
+    const punctuatedWeb = agentSkillName(path.join(root, "web!"));
+    assert.match(web, /^sveltekit-fsd-web-[a-f0-9]{8}$/);
+    assert.notEqual(web, upperWeb);
+    assert.notEqual(web, punctuatedWeb);
     assert.match(agentSkillName(path.join(root, "เว็บ")), /^sveltekit-fsd-[a-f0-9]{8}$/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -32,15 +37,16 @@ test("nested packages write the real skill at the repository root", () => {
   const root = tempTree();
   try {
     const web = path.join(root, "web");
-    writeAgentSkill(web, "sveltekit-fsd-web", { "SKILL.md": "# Skill\n" });
+    const skillName = agentSkillName(web);
+    writeAgentSkill(web, skillName, { "SKILL.md": "# Skill\n" });
 
     assert.equal(
-      fs.readFileSync(path.join(root, ".agents/skills/sveltekit-fsd-web/SKILL.md"), "utf8"),
+      fs.readFileSync(path.join(root, ".agents/skills", skillName, "SKILL.md"), "utf8"),
       "# Skill\n"
     );
-    const link = path.join(root, ".claude/skills/sveltekit-fsd-web");
+    const link = path.join(root, ".claude/skills", skillName);
     assert.ok(fs.lstatSync(link).isSymbolicLink());
-    assert.equal(fs.readlinkSync(link), "../../.agents/skills/sveltekit-fsd-web");
+    assert.equal(fs.readlinkSync(link), `../../.agents/skills/${skillName}`);
     assert.ok(!fs.existsSync(path.join(web, ".agents")));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -51,9 +57,10 @@ test("a different skill with the same name is rejected", () => {
   const root = tempTree();
   try {
     const web = path.join(root, "web");
-    writeAgentSkill(web, "sveltekit-fsd-web", { "SKILL.md": "# First\n" });
+    const skillName = agentSkillName(web);
+    writeAgentSkill(web, skillName, { "SKILL.md": "# First\n" });
     assert.throws(
-      () => writeAgentSkill(web, "sveltekit-fsd-web", { "SKILL.md": "# Different\n" }),
+      () => writeAgentSkill(web, skillName, { "SKILL.md": "# Different\n" }),
       /already exists.*different content/
     );
   } finally {
@@ -65,13 +72,14 @@ test("a stale real .claude copy is refreshed from .agents", () => {
   const root = tempTree();
   try {
     const web = path.join(root, "web");
-    writeAgentSkill(web, "sveltekit-fsd-web", { "SKILL.md": "# Same\n" });
-    const link = path.join(root, ".claude/skills/sveltekit-fsd-web");
+    const skillName = agentSkillName(web);
+    writeAgentSkill(web, skillName, { "SKILL.md": "# Same\n" });
+    const link = path.join(root, ".claude/skills", skillName);
     fs.rmSync(link, { recursive: true, force: true });
     fs.mkdirSync(link, { recursive: true });
     fs.writeFileSync(path.join(link, "SKILL.md"), "# Stale\n");
 
-    writeAgentSkill(web, "sveltekit-fsd-web", { "SKILL.md": "# Same\n" });
+    writeAgentSkill(web, skillName, { "SKILL.md": "# Same\n" });
     assert.equal(fs.readFileSync(path.join(link, "SKILL.md"), "utf8"), "# Same\n");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

@@ -199,20 +199,19 @@ export function toPosix(value: string): string {
 
 /**
  * A package-scoped skill name. A repository-root project keeps the historical
- * `sveltekit-fsd` name; a nested monorepo package gets a path suffix so two
- * frontends cannot overwrite each other's skill.
+ * `sveltekit-fsd` name; a nested monorepo package gets both a readable path
+ * suffix and a short hash of the exact relative path, so `web`, `WEB`, and
+ * `web!` cannot normalize onto the same skill.
  */
 export function agentSkillName(projectDir: string, repoRoot = findRepoRoot(projectDir)): string {
-  const relative = toPosix(path.relative(repoRoot, path.resolve(projectDir))).replace(/^\.\/?$/, "");
+  const relative = toPosix(path.relative(repoRoot, path.resolve(projectDir)));
   if (!relative) return "sveltekit-fsd";
   const slug = relative
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-  if (slug) return `sveltekit-fsd-${slug}`;
-  // A package path with no ASCII letters/digits still needs a unique name.
   const digest = createHash("sha1").update(relative).digest("hex").slice(0, 8);
-  return `sveltekit-fsd-${digest}`;
+  return slug ? `sveltekit-fsd-${slug}-${digest}` : `sveltekit-fsd-${digest}`;
 }
 
 export type KitMajor = 2 | 3;

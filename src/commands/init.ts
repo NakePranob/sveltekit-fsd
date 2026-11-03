@@ -89,6 +89,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   const packageLabel = packagePath === "." ? "repository root" : `\`${packagePath}\` package`;
   const runFrom = packagePath === "." ? "the repository root" : `the \`${packagePath}\` package root`;
   const configPath = packagePath === "." ? "sveltekit-fsd.config.json" : `${packagePath}/sveltekit-fsd.config.json`;
+  const configPhrase = packagePath === "." ? "a sveltekit-fsd.config.json at its root" : `\`${packagePath}/sveltekit-fsd.config.json\``;
   const docsDisplay = packagePath === "." ? "docs/fsd.md" : `${packagePath}/docs/fsd.md`;
 
   // Worked out now and written after the moves. A config this cannot patch has
@@ -203,6 +204,8 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     runFrom,
     agentsPath,
     configPath,
+    configPhrase,
+    docsDisplay,
     cssSource: toPosix(path.relative(path.dirname(stylesheet), srcDir)),
     docsFromSkill: toPosix(
       path.relative(skillDir, path.join(path.resolve(projectDir), "docs", "fsd.md"))
