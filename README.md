@@ -1,5 +1,5 @@
 <div align="center">
-  <img src=".github/assets/readme/hero.png" alt="sveltekit-fsd: SvelteKit structure that survives growth" width="100%">
+  <img src="https://raw.githubusercontent.com/NakePranob/sveltekit-fsd/main/.github/assets/readme/hero.png" alt="sveltekit-fsd: SvelteKit structure that survives growth" width="100%">
   <h1>sveltekit-fsd</h1>
   <p><strong>SvelteKit structure that survives growth.</strong></p>
   <p>
@@ -76,15 +76,7 @@ actually needs them.
 
 ## How it fits together
 
-```mermaid
-flowchart TB
-  ROUTE[src/app/routes] --> PAGE[pages]
-  APPF[src/app: layouts, providers, styles] --> ROUTE
-  PAGE --> WIDGET[widgets]
-  WIDGET --> FEATURE[features]
-  FEATURE --> ENTITY[entities]
-  ENTITY --> SHARED[shared]
-```
+![Feature-Sliced Design layers for sveltekit-fsd](https://raw.githubusercontent.com/NakePranob/sveltekit-fsd/main/.github/assets/readme/architecture.png)
 
 SvelteKit still owns routing, but the route tree lives inside the FSD app layer.
 Pages compose widgets, widgets compose features, features use entities, and
