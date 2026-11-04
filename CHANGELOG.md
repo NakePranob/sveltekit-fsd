@@ -6,8 +6,13 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## 0.4.0
+## 0.4.2
 
+### Fixed: README architecture diagram
+
+The README architecture diagram is now a static image, so it renders on npm as well as GitHub. No CLI behavior changed.
+
+## 0.4.0
 ### Added
 
 - `init` writes one generic `sveltekit-fsd` skill at the repository root. The
