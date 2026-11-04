@@ -1,369 +1,147 @@
-# @nakedev/sveltekit-fsd
+<div align="center">
+  <img src=".github/assets/readme/hero.png" alt="sveltekit-fsd: SvelteKit structure that survives growth" width="100%">
+  <h1>sveltekit-fsd</h1>
+  <p><strong>SvelteKit structure that survives growth.</strong></p>
+  <p>
+    <a href="https://www.npmjs.com/package/@nakedev/sveltekit-fsd"><img src="https://img.shields.io/npm/v/@nakedev/sveltekit-fsd.svg" alt="npm version"></a>
+    <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/@nakedev/sveltekit-fsd.svg" alt="Node.js version"></a>
+    <a href="https://github.com/NakePranob/sveltekit-fsd/actions/workflows/ci.yml"><img src="https://github.com/NakePranob/sveltekit-fsd/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/npm/l/@nakedev/sveltekit-fsd.svg" alt="license"></a>
+  </p>
+</div>
 
-[![npm](https://img.shields.io/npm/v/@nakedev/sveltekit-fsd)](https://www.npmjs.com/package/@nakedev/sveltekit-fsd)
-[![node](https://img.shields.io/node/v/@nakedev/sveltekit-fsd)](https://nodejs.org)
-[![license](https://img.shields.io/npm/l/@nakedev/sveltekit-fsd)](LICENSE)
-
-Keep a SvelteKit project on [Feature-Sliced Design](https://feature-sliced.design).
-
-- **`init`** shapes the layers once — including moving routing *into* the FSD app
-  layer, which is what the methodology's own SvelteKit guide asks for — and wires
-  up two linters that enforce the import boundary.
-- **`generate`** writes pages, slices and layouts that all have the same shape.
-- **`add`** installs the two pieces every project ends up rewriting by hand: API
-  error handling and authentication.
+`sveltekit-fsd` is an npm CLI for keeping a **SvelteKit** project on
+**Feature-Sliced Design**. It moves routing into the FSD app layer once, wires
+two linters around the import boundary, and then generates pages, slices, and
+layouts with the same shape. Auth, API error handling, and formatting are
+commands too.
 
 SvelteKit already creates projects, so this CLI has no `create`. The workflow is
-`sv create`, then `sveltekit-fsd init` once, then the same CLI from the project
+`sv create`, one `sveltekit-fsd init`, then the same CLI from the project
 whenever the frontend grows.
 
-Sibling to [@nakedev/nextjs-fsd](https://www.npmjs.com/package/@nakedev/nextjs-fsd)
-and [@nakedev/go-scaffold](https://www.npmjs.com/package/@nakedev/go-scaffold),
-which generate the same architecture for Next.js and the Go backend these
-templates are written against.
+## Why sveltekit-fsd
 
-## Install
-
-```bash
-npm install --global @nakedev/sveltekit-fsd
-sveltekit-fsd --help
-```
-
-npx and bunx work too, if you would rather not install anything:
-
-```bash
-npx @nakedev/sveltekit-fsd init
-bunx @nakedev/sveltekit-fsd generate page dashboard
-```
+- **Routing is part of the architecture, not beside it.** `init` moves
+  `src/routes` into the FSD app layer (`src/app/routes`) instead of leaving two
+  structures to drift apart.
+- **Every slice has the same shape.** Pages, slices, and layouts are generated
+  with the same segments and public APIs.
+- **The cross-cutting wiring is already done.** Auth, API error normalization,
+  session handling, and formatting arrive as commands, not as a checklist.
 
 ## Quick start
 
 ```bash
+npm install --global @nakedev/sveltekit-fsd
 npx sv create my-app --template minimal --types ts --add prettier eslint tailwindcss
-cd my-app
 
-sveltekit-fsd init                 # once: move routing into the app layer, add linters, docs, skills
-sveltekit-fsd add auth             # shared/auth + a login page (pulls in error handling)
+cd my-app
+sveltekit-fsd init                 # once: move routing, add linters and docs
+sveltekit-fsd add auth             # shared/auth + a login page
 sveltekit-fsd generate page dashboard --auth
 ```
 
-What you end up with:
-
-```
-src/
-├─ app/                              # the FSD app layer — SvelteKit's own files live here
-│  ├─ routes/                        # moved from src/routes
-│  │  ├─ +layout.svelte              # wrapped in <Providers>
-│  │  ├─ login/+page.svelte
-│  │  └─ dashboard/+page.svelte
-│  ├─ layouts/                       # generate layout writes here
-│  ├─ providers/                     # QueryClientProvider
-│  ├─ styles/app.css                 # moved from src/routes
-│  └─ index.html                     # moved from src/app.html
-├─ pages/
-│  ├─ login/          { ui/, index.ts }
-│  └─ dashboard/      { ui/, index.ts }
-└─ shared/
-   ├─ api/                           # ApiError, error catalogs, axios client, QueryClient
-   ├─ auth/                          # session, requireSession, in-memory access token
-   ├─ config/env.ts
-   └─ ui/form-error.svelte
-```
-
-`features/` and `entities/` are not created empty — they appear when a slice
-actually needs them. Then:
+Then:
 
 ```bash
 npm run dev
-npm run check                      # svelte-check — this is the typecheck
+npm run check                      # svelte-check
 npm run lint                       # eslint (import boundary) + steiger (whole tree)
 ```
 
-## Requirements
+`features/` and `entities/` are not created empty; they appear when a slice
+actually needs them.
 
-- **Node.js >=20.9** to run the CLI.
-- A **SvelteKit 2 or 3** project in TypeScript, created by `sv create`. The CLI
-  reads which one from the installed `@sveltejs/kit` (or the declared range,
-  before an install) and generates for it; a SvelteKit 3 app itself needs
-  Node.js 22.17+. Svelte 5 and
-  runes mode — the generated components use `$props`, `$state`, `$derived` and
-  `$effect`, and `sv create` turns runes on for you.
-- The project's **package manager** — npm, pnpm, yarn or bun. Detected from the
-  lockfile; the CLI installs the dependencies its templates need.
-- **Tailwind CSS**, if you want the generated markup to look like anything —
-  everything this CLI emits is styled with utility classes (`npx sv add
-  tailwindcss`). Without it, `init` writes no stylesheet and says so.
-- An **HTTP API** for `add auth` and `add error-handling` to talk to. Both are
-  written against the shape go-scaffold produces; see their sections for what to
-  change if yours differs.
+### Requirements
+
+- **Node.js >=20.9** for the CLI.
+- A **SvelteKit 2 or 3** project in TypeScript, created by `sv create`.
+- **Svelte 5** and runes mode. The generated components use `$props`, `$state`,
+  `$derived`, and `$effect`; `sv create` turns runes on for you.
+- A SvelteKit 3 app itself needs **Node.js 22.17+**.
+
+## What you get
+
+| Area | What `sveltekit-fsd` gives you |
+| --- | --- |
+| **App layer** | Routing moved to `src/app/routes`, with layouts, providers, styles, and `app.html` in one FSD app layer. |
+| **Layers** | `pages`, `widgets`, `features`, `entities`, and `shared` in the FSD shape. |
+| **Boundaries** | ESLint import rules plus Steiger for the whole tree. |
+| **Generators** | Pages, slices, and layouts with consistent segments and public APIs. |
+| **Auth** | A login page, session store, access token handling, route guard, and the API client it needs. |
+| **Error handling** | One API error type, error catalogs, and the client boundary that normalises failures. |
+| **Formatting** | Prettier with Tailwind class sorting. |
+| **Agent guidance** | Repository-level `AGENTS.md`, `CLAUDE.md`, and a generated skill that knows the project's paths. |
+
+## How it fits together
+
+```mermaid
+flowchart TB
+  ROUTE[src/app/routes] --> PAGE[pages]
+  APPF[src/app: layouts, providers, styles] --> ROUTE
+  PAGE --> WIDGET[widgets]
+  WIDGET --> FEATURE[features]
+  FEATURE --> ENTITY[entities]
+  ENTITY --> SHARED[shared]
+```
+
+SvelteKit still owns routing, but the route tree lives inside the FSD app layer.
+Pages compose widgets, widgets compose features, features use entities, and
+everything may use shared. The linters enforce that direction.
+
+## Generated project
+
+```text
+src/
+├─ app/                      # FSD app layer
+│  ├─ routes/                # SvelteKit routes, moved from src/routes
+│  ├─ layouts/               # generated layout components
+│  ├─ providers/             # query client and other providers
+│  ├─ styles/                # app.css
+│  └─ index.html             # moved from src/app.html
+├─ pages/                    # one folder per route screen
+├─ widgets/                  # composed UI blocks
+├─ features/                 # user actions
+├─ entities/                 # business entities
+└─ shared/                   # api, auth, config, ui, lib
+```
 
 ## Commands
 
-```bash
-sveltekit-fsd                                  # interactive menu
-sveltekit-fsd wizard                            # same menu, explicit form
-sveltekit-fsd init [--locale th|en] [--no-install] [--no-hooks] [--defaults]
+| Command | What it does |
+| --- | --- |
+| `init` | Move routing into the FSD app layer, add linters and docs. |
+| `generate page [name]` | Add a route page with its slice and wiring. |
+| `generate slice [layer] [name]` | Add a `features` or `entities` slice. |
+| `generate layout [name]` | Add shared chrome for a route group. |
+| `add auth` | Add password login, session handling, and a login page. |
+| `add error-handling` | Add the API error boundary and error catalogs. |
+| `add prettier` | Add formatting with Tailwind class sorting. |
+| `config` | Inspect and change project settings. |
 
-sveltekit-fsd generate page <name...> [--title <t>] [--route <path>] [--no-route] [--auth] [--api] [--errors] [-r <root>]
-sveltekit-fsd generate slice <features|entities|widgets> <name...> [-s <segments...>] [-r <root>] [--errors]
-sveltekit-fsd generate layout <name> [--route <path>] [--no-route] [--guard]
+Run any command with `--help` for its current options. The full command
+reference — wizard behavior, every option, generated output, and limitations —
+lives in [`REFERENCE.md`](REFERENCE.md).
 
-sveltekit-fsd add error-handling [-y] [--no-install]
-sveltekit-fsd add auth [-y] [--no-install]
-sveltekit-fsd add prettier [-y] [--no-install]
+## Learn more
 
-sveltekit-fsd config show
-sveltekit-fsd config set locale th|en
-```
-
-Run `sveltekit-fsd` or `sveltekit-fsd wizard` if you do not know which command to
-use. The menu guides you to `init`, `generate`, `add`, or project config, and the
-next questions ask for names, layers, segments, routes, auth, API hooks, and
-error catalogs. You can also run a subcommand with only the values you know; the
-missing values open prompts in an interactive terminal.
-
-`--defaults` answers every remaining question, which is what CI and agents need
-— a prompt in a non-interactive shell exits 1 without writing anything.
-
-Prompts also disappear when they cannot apply: `--auth` is refused until `add
-auth` has run, and the error-catalog question is not asked at all without `add
-error-handling`.
-
-### `init`
-
-The one command that rearranges a project you already have:
-
-In an interactive terminal, `init` asks whether to install dependencies and
-whether to add the Conventional Commit hook. `--no-install` and `--no-hooks`
-remain available for scripts and CI.
-
-| | before | after |
-|---|---|---|
-| routing | `src/routes/` | `src/app/routes/` |
-| page template | `src/app.html` | `src/app/index.html` |
-| stylesheet | `src/routes/layout.css` (wherever the layout imports it from) | `src/app/styles/app.css` |
-
-and it points SvelteKit at all three. How depends on the major it finds
-([why](docs/design-notes.md#which-config-file-init-patches)):
-
-| | SvelteKit 2 | SvelteKit 3 |
-|---|---|---|
-| patched | `vite.config.ts` or `svelte.config.js`, whichever is live | `vite.config.ts` — the only config 3 reads |
-| routes | `files: { routes: 'src/app/routes', appTemplate: 'src/app/index.html' }` | the same |
-| imports | `alias: { '@/*': 'src/*' }` in that config | `"imports": { "#/*": "./src/*/index.ts" }` in package.json |
-| written as | `@/pages/login` | `#/pages/login` |
-
-SvelteKit 3 deprecates `alias`, so a project started on 3 imports through a
-package.json subpath import instead. It maps straight to `index.ts`, which also
-means a path into a slice does not resolve at all
-([why](docs/design-notes.md#why-sveltekit-3-projects-import-through--not-)).
-The spelling is chosen once, here, and recorded in `sveltekit-fsd.config.json`:
-every later command generates imports that way.
-
-`tsconfig.json` is **not** touched on either — SvelteKit 2 writes `kit.alias`
-into the generated `.svelte-kit/tsconfig.json` that yours extends, and
-TypeScript reads a package.json `imports` map on its own.
-
-It also adds:
-
-- `eslint.fsd.js` — the import boundary as ESLint rules, spread into your flat
-  config. No new dependencies: core `no-restricted-imports` plus the layer order.
-- `steiger.config.ts` + `steiger` and the FSD plugin, chained onto `lint`.
-  [Why two linters](docs/design-notes.md#two-linters-on-purpose).
-- `components.json` so `shadcn-svelte add` writes into `src/shared/ui` —
-  SvelteKit 2 only, see [Known limitations](#known-limitations).
-- `docs/fsd.md` — the convention, in this project's own words.
-- `AGENTS.md` and two agent skills at the repository root. Codex can load the
-  project guidance from `AGENTS.md`; Claude Code can use the skills through the
-  `.claude/skills/` symlinks. The CLI does not install agent lifecycle hooks or
-  modify agent settings.
-- A `commit-msg` hook that checks the subject is a Conventional Commit — shape
-  only; your language and emoji rules stay yours.
-
-Anything it would write that you already have is left alone and listed at the
-end, rather than the whole command refusing over one file.
-
-### `generate page`
-
-Writes one or more pages slices under the configured FSD root — the component
-and its `index.ts` public API — plus the route files that render them:
-
-```svelte
-<!-- src/app/routes/dashboard/+page.svelte -->
-<script lang="ts">
-	import { DashboardPage } from '@/pages/dashboard';
-</script>
-
-<DashboardPage />
-```
-
-There is nothing else to forward: a Svelte page carries its own `<svelte:head>`,
-so the title travels with the component.
-
-`--route` takes SvelteKit's own segment forms: `(admin)/dashboard`, `loans/[id]`,
-`docs/[...slug]`, `[[lang]]/home`, `loans/[id=integer]`.
-
-Names may include a slice group, such as `admin/dashboard`, and `--root` may
-choose another FSD root inside `src/` (for example `src/domain`). The SvelteKit
-`src/lib/` directory remains reserved for `$lib`. Multiple page names use their
-name as their route; pass `--route` only when generating one page.
-
-`--auth` puts the page behind `requireSession()`. `--api` adds the page's
-TanStack Query hooks under `api/<name>.ts`, while `--errors` adds an error
-catalog for the codes its endpoints answer with. The old `--model` flag remains
-as a compatibility alias for `--api`.
-
-### `generate slice`
-
-Layers are `features`, `entities` and `widgets`. `pages` slices come from
-`generate page`; `app` and `shared` are written by `init` and `add`. Prefer
-`features/` — [`widgets/` is closed by project
-choice](docs/design-notes.md#why-widgets-is-closed-by-project-choice).
-
-`ui/` alone is the common case. `model/`, `api/`, `lib/` and `config/` appear when
-the slice actually has that code. A `model/` segment is written as `<name>.svelte.ts`, and
-that [is not a style choice](docs/design-notes.md#why-a-model-segment-is-a-runes-module).
-Page-specific requests stay in `pages/<name>/api/`; reusable domain requests
-move to `entities/<name>/api/`, reusable actions to `features/<name>/api/`, and
-generic CRUD primitives to `shared/api/`.
-
-The command accepts multiple slice names, comma-separated or as separate
-arguments, and supports slice groups such as `employee/employee-record`:
-
-```bash
-sveltekit-fsd generate slice entities user profile -s ui api
-sveltekit-fsd generate slice features employee/employee-record -s ui -r src/domain
-```
-
-`-s` is the short form of `--segments`; both comma-separated and space-separated
-segments work. `-r` is the short form of `--root`.
-
-### `generate layout`
-
-A shared shell for a group of routes: the component in `src/app/layouts/` plus
-the `+layout.svelte` that renders it. Defaults to a route group — `(admin)` —
-because that is a layout's usual reason to exist: shared chrome that contributes
-nothing to the URL.
-
-`--guard` puts every route under it behind the session, in one component. That is
-where a guard belongs; a page that also checks for itself races the shell.
-
-### `add error-handling`
-
-Writes `src/shared/api/`: an `ApiError` every failure is normalised into,
-per-domain catalogs mapping the API's machine codes to sentences, an axios client
-with a single-flight 401 refresh, and a QueryClient that ends the session when a
-refresh can no longer save it.
-
-The API base URL is `PUBLIC_API_URL`, read when the app starts. On SvelteKit 3
-it is declared in `src/env.ts` — created, or added to the `defineEnvVars({ ... })`
-you already have — and read from `$app/env/public`; on 2 it comes from
-`$env/dynamic/public`.
-
-Two rules in there fail silently in a browser rather than loudly, which is why
-they get the only generated test —
-[details](docs/design-notes.md#the-two-rules-in-add-error-handling-that-get-the-only-generated-test).
-
-### `add auth`
-
-Writes `src/shared/auth/` and a login page. Assumes the API answers `POST
-/auth/login` with an access token, keeps the refresh token in an httpOnly cookie,
-and serves `GET /users/me`. Adjust the paths and the `Session` type if yours
-differ — they are in one file each.
-
-The access token lives in a module variable and nowhere else, and `?next=` is
-parsed rather than prefix-checked. Both are
-[deliberate](docs/design-notes.md#why-the-access-token-lives-in-a-module-variable).
-
-### `add prettier`
-
-Worth a command only because of two pointers everyone has to rediscover —
-`prettier-plugin-svelte` with a parser override, and `tailwindStylesheet` for
-Tailwind v4 ([details](docs/design-notes.md#what-add-prettier-is-actually-for)).
-Most projects already have prettier from `sv add prettier`, in which case this
-refuses and prints what to add to the config you have.
-
-## Re-running a command extends, it does not rewrite
-
-```bash
-sveltekit-fsd generate slice features checkout --segments ui        # ui/ only
-sveltekit-fsd generate slice features checkout --segments ui,model  # adds model/
-sveltekit-fsd generate page dashboard --errors --defaults           # adds the catalog
-```
-
-Only the missing files are written, new exports are appended to the slice's
-`index.ts`, and every existing file is left byte-for-byte alone. If there is
-nothing to add, the command says so and writes nothing. A page that is already
-routed from somewhere else does not get a second route file.
-
-## Monorepos
-
-Every command works out where the project is before doing anything: the
-nearest `sveltekit-fsd.config.json` walking upward (so `web/src/pages/…`
-works), otherwise the single workspace child that holds one — `web/` in a
-`web/`-beside-`api/` checkout with `"workspaces": ["web"]`. Several
-workspace projects is not a guess the CLI makes for you: it names each one
-and asks you to re-run from the one you mean. Running bare `sveltekit-fsd`
-where no project resolves says the same instead of starting `init` somewhere
-it does not belong.
-
-## Generated copy, and i18n
-
-`--locale` decides what language the first draft of the generated user-facing
-strings is written in — Thai (the default) or English. That is all it decides:
-there is no runtime i18n here, and a project that adds one does not need a
-different shape from this CLI. A catalog is a plain object, so build it from the
-translator where it is rendered:
-
-```svelte
-<FormError error={save.error} catalogs={[{ CONFLICT: t('conflict') }]} fallback={t('saveFailed')} />
-```
-
-The codes stay the keys. They are the API's contract, not copy.
-
-## Known limitations
-
-- **A project initialised on SvelteKit 2 keeps `@/` after upgrading to 3.** It
-  still works, but SvelteKit 3 prints `config.alias is deprecated` on every
-  `dev`, `build` and `check`, and the option is slated for removal. `add` and
-  `generate` follow the SvelteKit you run now — env and navigation APIs
-  included — but keep the import spelling `init` recorded. There is no command
-  that moves a project to `#/` yet.
-- **No `components.json` on SvelteKit 3.** shadcn-svelte resolves a `#` alias
-  through the import map, and through one that ends every specifier in
-  `index.ts` it writes components into `src/shared/ui/noop.js/`
-  ([details](docs/design-notes.md#why-sveltekit-3-projects-get-no-componentsjson)).
-  `init` says so and leaves the file to you.
+- [Full command reference](REFERENCE.md)
+- [Design notes](docs/design-notes.md)
+- [Source, template, and test workflow](AGENTS.md)
+- Sibling projects: [`go-scaffold`](https://www.npmjs.com/package/@nakedev/go-scaffold) and [`nextjs-fsd`](https://www.npmjs.com/package/@nakedev/nextjs-fsd)
 
 ## Development
 
 ```bash
-npm run verify             # tsc + the patcher unit tests + the smoke test
-npm run test:integration   # slow, networked: a real sv create, install, check, lint, build
+pnpm install --frozen-lockfile
+pnpm run build
+pnpm run test
 ```
 
-See [AGENTS.md](AGENTS.md) for what each check catches and what it misses, and
-[docs/design-notes.md](docs/design-notes.md) for why the generated code looks the
-way it does.
-
-## Releases
-
-Every pull request into `main` must increase the root `package.json` version.
-The CI version check compares it with the pull request base and also requires
-`package-lock.json` to carry the same version. Use npm to update both files:
-
-```bash
-npm version patch --no-git-tag-version
-npm run verify
-```
-
-After the version change is merged, the release workflow runs the same verify
-and integration gates, creates an annotated `vX.Y.Z` tag on that `main` commit,
-and publishes the matching package to npm. It also creates the GitHub Release.
-If a publish needs a retry, run the `release` workflow manually and provide the
-existing tag; it will verify the tag again and skip an npm version that is
-already published.
+See [`AGENTS.md`](AGENTS.md) for the source/template/test workflow and the
+release contract.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
