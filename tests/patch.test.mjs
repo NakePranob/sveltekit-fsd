@@ -28,12 +28,14 @@ const {
   patchKitConfig,
   patchLayoutProviders,
   packageImportsStatus,
+  patchTsconfigPaths,
   patchEnvFile,
   patchLayoutStyleImport,
   patchPackageImports,
   patchPrettierTailwindStylesheet,
   stylesheetSpecifier,
   subpathImport,
+  tsconfigPathsStatus,
 } = await import(dist("project.js"));
 const { validateRoute, normalizeRoute } = await import(dist("naming.js"));
 
@@ -455,4 +457,54 @@ test("validateRoute accepts SvelteKit's own segment forms and rejects the rest",
     assert.notEqual(validateRoute(route), true, route);
   }
   assert.equal(normalizeRoute("/dashboard/"), "dashboard");
+});
+
+test("patchTsconfigPaths adds the # mapping without replacing existing paths", () => {
+  const dir = fixture({
+    "tsconfig.json": JSON.stringify(
+      {
+        extends: "$app/tsconfig",
+        compilerOptions: { strict: true, paths: { "@/*": ["./src/*"] } },
+      },
+      null,
+      "\t"
+    ),
+  });
+  const entries = { "#/*": ["./src/*/index.ts"] };
+
+  assert.equal(tsconfigPathsStatus(dir, entries), "missing");
+  assert.equal(patchTsconfigPaths(dir, entries), "patched");
+
+  const tsconfig = JSON.parse(fs.readFileSync(path.join(dir, "tsconfig.json"), "utf8"));
+  assert.deepEqual(tsconfig.compilerOptions.paths, {
+    "@/*": ["./src/*"],
+    "#/*": ["./src/*/index.ts"],
+  });
+  assert.equal(tsconfigPathsStatus(dir, entries), "already");
+  assert.equal(patchTsconfigPaths(dir, entries), "already");
+});
+
+test("patchTsconfigPaths refuses to overwrite a different # mapping", () => {
+  const original = JSON.stringify(
+    {
+      extends: "$app/tsconfig",
+      compilerOptions: { paths: { "#/*": ["./src/legacy/*"] } },
+    },
+    null,
+    "\t"
+  );
+  const dir = fixture({ "tsconfig.json": original });
+
+  assert.equal(tsconfigPathsStatus(dir, { "#/*": ["./src/*/index.ts"] }), "manual");
+  assert.equal(patchTsconfigPaths(dir, { "#/*": ["./src/*/index.ts"] }), "manual");
+  assert.equal(fs.readFileSync(path.join(dir, "tsconfig.json"), "utf8"), original);
+});
+
+test("patchTsconfigPaths leaves a commented tsconfig for a human", () => {
+  const dir = fixture({
+    "tsconfig.json": '{\n\t// Path aliases live here.\n\t"compilerOptions": {}\n}\n',
+  });
+
+  assert.equal(tsconfigPathsStatus(dir, { "#/*": ["./src/*/index.ts"] }), "manual");
+  assert.equal(patchTsconfigPaths(dir, { "#/*": ["./src/*/index.ts"] }), "manual");
 });

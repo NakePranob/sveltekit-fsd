@@ -447,6 +447,71 @@ export function patchPackageImports(
 }
 
 /**
+ * Adds path mappings to the project's own tsconfig without replacing the ones
+ * the project already has.
+ *
+ * Steiger resolves imports through tsconfig, not through package.json
+ * `imports`. On SvelteKit 3 the `#/*` entry lives in package.json, so without
+ * this mapping ESLint flags an upward `#/` import but Steiger skips it as an
+ * unresolved specifier. The mapping is written only when tsconfig is a plain
+ * JSON file; a commented or malformed tsconfig is reported as manual rather
+ * than rewritten by guesswork.
+ */
+export function tsconfigPathsStatus(
+  projectDir: string,
+  entries: Record<string, string[]>
+): "absent" | "missing" | "already" | "manual" {
+  const file = path.join(projectDir, "tsconfig.json");
+  if (!fs.existsSync(file)) return "absent";
+
+  let parsed: unknown;
+  try {
+    parsed = fs.readJsonSync(file);
+  } catch {
+    return "manual";
+  }
+  if (!isRecord(parsed)) return "manual";
+
+  const compilerOptions = parsed.compilerOptions;
+  if (compilerOptions !== undefined && !isRecord(compilerOptions)) return "manual";
+  const paths = compilerOptions?.paths;
+  if (paths !== undefined && !isRecord(paths)) return "manual";
+  const pathMap: Record<string, unknown> = paths ?? {};
+
+  for (const [key, target] of Object.entries(entries)) {
+    if (Object.prototype.hasOwnProperty.call(pathMap, key)) {
+      if (JSON.stringify(pathMap[key]) !== JSON.stringify(target)) return "manual";
+    }
+  }
+
+  const missing = Object.keys(entries).filter(
+    (key) => !Object.prototype.hasOwnProperty.call(pathMap, key)
+  );
+  return missing.length === 0 ? "already" : "missing";
+}
+
+export function patchTsconfigPaths(
+  projectDir: string,
+  entries: Record<string, string[]>
+): "patched" | "absent" | "already" | "manual" {
+  const status = tsconfigPathsStatus(projectDir, entries);
+  if (status !== "missing") return status;
+
+  const file = path.join(projectDir, "tsconfig.json");
+  const parsed = fs.readJsonSync(file) as Record<string, unknown>;
+  const compilerOptions = (parsed.compilerOptions ?? {}) as Record<string, unknown>;
+  const paths = (compilerOptions.paths ?? {}) as Record<string, unknown>;
+  compilerOptions.paths = { ...paths, ...entries };
+  parsed.compilerOptions = compilerOptions;
+  writeJson(file, parsed);
+  return "patched";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
  * Adds one variable to the `defineEnvVars({ ... })` object in a SvelteKit 3
  * `src/env.ts` the project already has.
  *

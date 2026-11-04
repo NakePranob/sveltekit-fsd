@@ -6,6 +6,18 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## 0.4.3
+
+### Fixed: Steiger resolves `#/` imports on SvelteKit 3
+
+`init` now writes the `#/*` alias into `tsconfig.json` `compilerOptions.paths`
+as well as `package.json#imports`. Steiger resolves imports through tsconfig,
+so the whole-tree check now catches a wrong-direction `#/` import instead of
+silently skipping it as unresolved.
+
+`init` refuses to overwrite a conflicting `#/*` mapping or a tsconfig it cannot
+parse, and formats the tsconfig it patches.
+
 ## 0.4.2
 
 ### Fixed: README architecture diagram

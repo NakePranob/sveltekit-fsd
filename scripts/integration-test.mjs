@@ -104,6 +104,11 @@ const probe = capture("npx", ["eslint", "src/shared/lib/boundary-probe.ts"]);
 if (probe.status === 0 || !probe.output.includes("no-restricted-imports")) {
   throw new Error("eslint.fsd.js did not flag an upward import from shared/ — the boundary is inert");
 }
+step("steiger has to see the same upward import, not skip it as unresolved");
+const steigerProbe = capture("npx", ["steiger", "./src"]);
+if (steigerProbe.status === 0 || !steigerProbe.output.includes("fsd/forbidden-imports")) {
+  throw new Error("steiger did not flag the upward import — its tsconfig path mapping is missing or inert");
+}
 fs.rmSync(path.join(app, "src/shared/lib"), { recursive: true });
 
 step("steiger — whole-tree, and it must stay green on generated code");
