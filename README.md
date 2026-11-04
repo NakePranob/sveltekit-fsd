@@ -76,9 +76,17 @@ actually needs them.
 
 ## CLI or manual setup?
 
+| Situation | Choose | Why |
+| --- | --- | --- |
+| One-off project, or the architecture is the experiment | Manual | You keep full control of every file and convention. |
+| More than one repository, or the same feature is repeated | CLI | The next project starts with the same shape. |
+| More than one person or agent edits the repo | CLI | Boundary checks and agent guidance ship with the scaffold. |
+| You need to prove an import is rejected | CLI | ESLint/Steiger or `check` is already wired. |
+| Every file must be custom | Manual | The CLI is opinionated by design. |
+
 A manual setup gives you the most freedom. It is the right choice when the architecture is intentionally different, the project is a one-off, or you need to own every file from the first commit. The cost is that every convention — layer boundaries, auth wiring, framework path rules — has to be rebuilt and reviewed again.
 
-The CLI is for repetition. It gives the next project the same shape, encodes SvelteKit routing into the FSD app layer and the `#/*` alias resolution, and ships boundary checks and agent guidance with the scaffold. It is not automatically faster; a fair speed benchmark has not been run. It is more consistent when more than one person or agent touches the repo.
+The CLI is for repetition. It gives the next project the same shape, encodes framework and layout constraints, and ships boundary checks and agent guidance with the scaffold. It is not automatically faster; a fair cross-project benchmark has not been run.
 
 Use the CLI when repeatability, reviewable boundaries, and a stable target for AI agents matter. Use a manual setup when the architecture itself is the experiment.
 
