@@ -67,12 +67,20 @@ actually needs them.
 | --- | --- |
 | **App layer** | Routing moved to `src/app/routes`, with layouts, providers, styles, and `app.html` in one FSD app layer. |
 | **Layers** | `pages`, `widgets`, `features`, `entities`, and `shared` in the FSD shape. |
-| **Boundaries** | ESLint import rules plus Steiger for the whole tree. |
+| **Boundaries** | ESLint import rules plus Steiger for the whole tree. [See the proof](#proof-it-catches-a-violation). |
 | **Generators** | Pages, slices, and layouts with consistent segments and public APIs. |
 | **Auth** | A login page, session store, access token handling, route guard, and the API client it needs. |
 | **Error handling** | One API error type, error catalogs, and the client boundary that normalises failures. |
 | **Formatting** | Prettier with Tailwind class sorting. |
 | **Agent guidance** | Repository-level `AGENTS.md`, `CLAUDE.md`, and a generated skill that knows the project's paths. |
+
+## CLI or manual setup?
+
+A manual setup gives you the most freedom. It is the right choice when the architecture is intentionally different, the project is a one-off, or you need to own every file from the first commit. The cost is that every convention — layer boundaries, auth wiring, framework path rules — has to be rebuilt and reviewed again.
+
+The CLI is for repetition. It gives the next project the same shape, encodes SvelteKit routing into the FSD app layer and the `#/*` alias resolution, and ships boundary checks and agent guidance with the scaffold. It is not automatically faster; a fair speed benchmark has not been run. It is more consistent when more than one person or agent touches the repo.
+
+Use the CLI when repeatability, reviewable boundaries, and a stable target for AI agents matter. Use a manual setup when the architecture itself is the experiment.
 
 ## How it fits together
 
@@ -81,6 +89,51 @@ actually needs them.
 SvelteKit still owns routing, but the route tree lives inside the FSD app layer.
 Pages compose widgets, widgets compose features, features use entities, and
 everything may use shared. The linters enforce that direction.
+
+## Proof it catches a violation
+
+`shared` is the bottom layer. If it imports `entities` or `pages`, the foundation starts to depend on a screen, becomes harder to test in isolation, and can create circular dependencies. The public `index.ts` rule keeps slices replaceable.
+
+On SvelteKit 2 the alias is `@`; on SvelteKit 3 it is `#`.
+
+```bash
+mkdir -p src/shared/lib
+cat > src/shared/lib/leak.ts <<'EOF'
+import { OrdersPage } from "#/pages/orders";
+export const leak = OrdersPage;
+EOF
+
+npx eslint .
+# exit 1
+# no-restricted-imports
+
+npx steiger ./src
+# exit 1
+# fsd/forbidden-imports
+```
+
+`init` writes the `#/*` mapping into both `package.json#imports` and `tsconfig.json#compilerOptions.paths`; the tsconfig half is what lets Steiger resolve the alias on SvelteKit 3.
+
+Remove the probe, or change it to a shared import:
+
+```bash
+npm run lint
+# exit 0
+```
+
+**What this catches:** wrong-direction alias imports and whole-tree FSD structure. **What it does not catch:** dynamic imports, runtime dependency injection, same-layer coupling, and server-side authorization.
+
+## Same input, same output
+
+Measured pilot, not yet a CI gate: three clean copies of the same base, the same CLI version, and the same flags.
+
+- 38 files in each run
+- manifest `36d14b9c…`
+- A↔B diff: 0
+- A↔C diff: 0
+- editing one generated file produced an 11-line manifest diff
+
+The manifest is every generated file's relative path plus its SHA-256, excluding `node_modules`, `.git`, `.next`, `.svelte-kit`, and `build`.
 
 ## Generated project
 
@@ -115,6 +168,19 @@ src/
 Run any command with `--help` for its current options. The full command
 reference — wizard behavior, every option, generated output, and limitations —
 lives in [`REFERENCE.md`](REFERENCE.md).
+
+## Auth: beta
+
+`add auth` generates the client-side session flow: login page, in-memory access token, refresh handling, session guard, and API error boundary. It is beta: generated projects exercise it, but it has not been audited for production.
+
+**What you still own:** server-side authentication and authorization, CSRF/CORS/cookie policy, token lifetime, and the API contract. The client guard is UX, not authorization.
+
+## What this does not cover
+
+- A production security audit
+- Server-side authorization tests
+- Dynamic imports and runtime dependency injection
+- Every possible FSD coupling; same-layer cross-slice review remains
 
 ## Learn more
 
