@@ -7,7 +7,9 @@ import { NO_TTY_MESSAGE, select } from "./prompts";
 import { initProject } from "./commands/init";
 import { generateLayout, generatePage, generatePages, generateSlice, generateSlices } from "./commands/generate";
 import { addAuth, addErrorHandling, addPrettier } from "./commands/add";
+import { applyAnswers, checkProject, interview, planAnswers } from "./commands/agent";
 import { setProjectLocale, showProjectConfig } from "./commands/config";
+import { startMcpServer } from "./mcp/server";
 import { isProjectDir, readConfig, requireProjectDir, resolveProjectDir } from "./utils/config";
 import { toPosix } from "./utils/project";
 import { parseLocale } from "./utils/copy";
@@ -40,6 +42,66 @@ program
       "`--defaults` answers every question for CI."
   )
   .version(cliVersion());
+
+program
+  .command("interview")
+  .description("print the scaffold decisions as JSON; asks nothing and writes nothing")
+  .action(() => {
+    console.log(JSON.stringify(interview(), null, 2));
+  });
+
+program
+  .command("plan")
+  .description("validate answers and print the exact commands apply would run; writes nothing")
+  .requiredOption("--answers <file>", 'answers JSON, or "-" for stdin')
+  .action((opts: { answers: string }) => {
+    try {
+      console.log(JSON.stringify(planAnswers(opts.answers, process.cwd()), null, 2));
+    } catch (err) {
+      console.error(
+        JSON.stringify({ schemaVersion: 1, ok: false, command: "plan", error: (err as Error).message }, null, 2)
+      );
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("apply")
+  .description("run the plan built from answers; stops at the first failing step")
+  .requiredOption("--answers <file>", 'answers JSON, or "-" for stdin')
+  .action(async (opts: { answers: string }) => {
+    try {
+      const result = await applyAnswers(opts.answers, process.cwd());
+      console.log(JSON.stringify(result, null, 2));
+      if (!result.ok) process.exitCode = 1;
+    } catch (err) {
+      console.error(
+        JSON.stringify({ schemaVersion: 1, ok: false, command: "apply", error: (err as Error).message }, null, 2)
+      );
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("check")
+  .description("verify config, feature flags, HTTP contract, and generated guidance as JSON")
+  .action(() => {
+    const result = checkProject(process.cwd());
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
+  });
+
+program
+  .command("mcp")
+  .description("run the stdio MCP server for agent-native FSD scaffolding")
+  .option("--root <dir>", "workspace root; defaults to the current directory and cannot escape it")
+  .action((opts: { root?: string }) => {
+    try {
+      startMcpServer({ root: opts.root });
+    } catch (err) {
+      fail(err);
+    }
+  });
 
 program
   .command("init")
@@ -290,9 +352,10 @@ config
 config
   .command("show")
   .description("print the resolved project config and which features are installed")
-  .action(() => {
+  .option("--json", "print the resolved config as JSON")
+  .action((opts: { json?: boolean }) => {
     try {
-      showProjectConfig();
+      showProjectConfig(opts.json);
     } catch (err) {
       fail(err);
     }

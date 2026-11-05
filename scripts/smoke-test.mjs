@@ -515,6 +515,102 @@ check(
 );
 check(!exists(stale, "src/shared/api/contract.ts"), "and nothing is written from it");
 
+// --- the same decisions, driven from one JSON file --------------------------
+console.log("smoke: agent interface");
+const agent = makeFixture("agent");
+const interview = JSON.parse(run(agent, ["interview"]));
+check(
+  interview.questions.some((question) => question.id === "http.contract") &&
+    interview.questions.some((question) => question.id === "features.add"),
+  "interview describes the decisions without writing"
+);
+check(!exists(agent, "sveltekit-fsd.config.json"), "and writes nothing");
+
+const agentResolved = { single: "data", list: "items-total", error: "errors-array" };
+const agentHash = `sha256:${crypto
+  .createHash("sha256")
+  .update(JSON.stringify({ single: agentResolved.single, list: agentResolved.list, error: agentResolved.error }))
+  .digest("hex")}`;
+write(
+  agent,
+  "http-contract.json",
+  JSON.stringify({ schemaVersion: 1, preset: "items", resolved: agentResolved, presetHash: agentHash }, null, 2)
+);
+write(
+  agent,
+  "answers.json",
+  JSON.stringify(
+    {
+      locale: "en",
+      install: false,
+      hooks: false,
+      httpContract: "http-contract.json",
+      add: ["error-handling"],
+      generate: [
+        { kind: "page", name: "dashboard", title: "Dashboard" },
+        { kind: "slice", layer: "features", name: "checkout", segments: ["ui", "api"] },
+      ],
+    },
+    null,
+    2
+  )
+);
+const plan = JSON.parse(run(agent, ["plan", "--answers", "answers.json"]));
+check(
+  plan.writes === false &&
+    JSON.stringify(plan.steps.map((step) => step.id)) ===
+      JSON.stringify(["init", "add-error-handling", "generate-page-dashboard", "generate-slice-checkout"]),
+  "plan lists the ordered steps and writes nothing"
+);
+check(!exists(agent, "sveltekit-fsd.config.json"), "plan leaves the project untouched");
+
+const applied = JSON.parse(run(agent, ["apply", "--answers", "answers.json"]));
+check(
+  applied.ok === true && applied.steps.every((step) => step.ok),
+  "apply runs every step and records the contract"
+);
+check(JSON.parse(read(agent, "sveltekit-fsd.config.json")).http.preset === "items", "the contract preset is stored");
+check(read(agent, "src/shared/api/contract.ts").includes("value.items"), "the parser follows the items shape");
+check(read(agent, "src/features/checkout/api/checkout.ts").includes("apiClient.getPage"), "the slice uses the contract client");
+
+const replay = JSON.parse(run(agent, ["apply", "--answers", "answers.json"]));
+check(
+  replay.ok === true && replay.steps.every((step) => step.ok),
+  "apply is replayable — finished steps are skipped, not errors"
+);
+
+const checked = JSON.parse(run(agent, ["check"]));
+check(
+  checked.ok === true && checked.config.http.preset === "items" && checked.checks.some((item) => item.id === "contract"),
+  "check reports the resolved contract and feature flags"
+);
+
+const mcpRun = spawnSync(process.execPath, [cli, "mcp", "--root", "."], {
+  cwd: agent,
+  input:
+    [
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
+      JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
+      JSON.stringify({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "sveltekit_fsd_check", arguments: {} } }),
+    ].join("\n") + "\n",
+  encoding: "utf8",
+});
+check(
+  JSON.stringify(JSON.parse(mcpRun.stdout.trim().split("\n")[1]).result.tools.map((tool) => tool.name)) ===
+    JSON.stringify([
+      "sveltekit_fsd_interview",
+      "sveltekit_fsd_plan",
+      "sveltekit_fsd_apply",
+      "sveltekit_fsd_check",
+      "sveltekit_fsd_config_show",
+    ]),
+  "mcp exposes the agent tools"
+);
+check(
+  JSON.parse(JSON.parse(mcpRun.stdout.trim().split("\n")[2]).result.content[0].text).ok === true,
+  "and check answers as JSON"
+);
+
 console.log("smoke: minimal project (no eslint, no tailwind, no vitest)");
 const min = makeFixture("min", { eslint: false, tailwind: false });
 const minOut = run(min, ["init", "--locale", "th", "--no-install", "--no-hooks", "--defaults"]);
