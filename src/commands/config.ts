@@ -4,8 +4,12 @@ import { parseLocale } from "../utils/copy";
 import { usesSubpathImports } from "../utils/project";
 import { cliVersion } from "../utils/version";
 
-export function showProjectConfig(): void {
+export function showProjectConfig(json = false): void {
   const config = readConfig(requireProjectDir(process.cwd()));
+  if (json) {
+    console.log(JSON.stringify(config, null, 2));
+    return;
+  }
   const rows: [string, string][] = [
     ["FSD layers", `${config.srcDir}/ (app, pages, features, entities, shared)`],
     ["routing", `${config.routesDir}/`],
