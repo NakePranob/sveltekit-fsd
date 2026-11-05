@@ -5,6 +5,7 @@ import pc from "picocolors";
 import { ProjectConfig } from "../types";
 import { confirm, select } from "../prompts";
 import { CONFIG_SCHEMA_VERSION, detectFeatures, isProjectDir, writeConfig } from "../utils/config";
+import { defaultHttpContract } from "../utils/http-contract";
 import { Locale, copyFor } from "../utils/copy";
 import { applyTemplates, formatFiles, readTemplateTree, renderTemplate } from "../utils/render";
 import {
@@ -29,9 +30,11 @@ import {
   patchLayoutStyleImport,
   patchPackageImports,
   patchPrettierTailwindStylesheet,
+  patchTsconfigPaths,
   rootLayoutPath,
   stylesheetSpecifier,
   subpathImport,
+  tsconfigPathsStatus,
   toPosix,
   usesSubpathImports,
   writeAgentSkill,
@@ -75,6 +78,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   const alias = kitMajor === 3 ? "#" : "@";
   const subpath = usesSubpathImports(alias);
   const imports = subpathImport(alias, srcDir);
+  const tsconfigPaths = { [`${alias}/*`]: [`./${srcDir}/*/index.ts`] };
   const routesDir = `${srcDir}/app/routes`;
   const appTemplate = `${srcDir}/app/index.html`;
   const stylesheet = `${srcDir}/app/styles/app.css`;
@@ -111,6 +115,13 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
       `package.json already maps \`${alias}/*\` in "imports" to something else, and every import this CLI generates goes through it. Nothing was moved.\n` +
         `Make it this, then re-run \`sveltekit-fsd init\`:\n` +
         `  "imports": { ${Object.entries(imports).map(([key, target]) => `"${key}": "${target}"`).join(", ")} }`
+    );
+  }
+  if (subpath && tsconfigPathsStatus(projectDir, tsconfigPaths) === "manual") {
+    throw new Error(
+      `could not add the \`${alias}/*\` path mapping to tsconfig.json — it is not plain JSON, or it already maps \`${alias}/*\` somewhere else. Nothing was moved.\n` +
+        `Add this to \`compilerOptions.paths\`, then re-run \`sveltekit-fsd init\`:\n` +
+        `  "paths": { ${Object.entries(tsconfigPaths).map(([key, target]) => `"${key}": ${JSON.stringify(target)}`).join(", ")} }`
     );
   }
 
@@ -221,7 +232,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     for (const line of [
       `move ${pc.cyan(currentRoutes + "/")} to ${pc.cyan(routesDir + "/")} and ${pc.cyan(currentAppHtml ?? `${srcDir}/app.html`)} to ${pc.cyan(appTemplate)} — routing becomes part of the FSD app layer`,
       subpath
-        ? `point ${pc.cyan(kitConfig.file)} at both, and map ${pc.cyan(`${alias}/*`)} to ./${srcDir}/*/index.ts in ${pc.cyan("package.json")} "imports" ${pc.dim("(a subpath import — SvelteKit 3 deprecates `alias`; tsconfig.json is left alone)")}`
+        ? `point ${pc.cyan(kitConfig.file)} at both, map ${pc.cyan(`${alias}/*`)} to ./${srcDir}/*/index.ts in ${pc.cyan("package.json")} "imports", and add the same mapping to ${pc.cyan("tsconfig.json")} for steiger ${pc.dim("(SvelteKit 3 deprecates `alias`)")}`
         : `point ${pc.cyan(kitConfig.file)} at both, and alias ${pc.cyan(`${alias}/*`)} to ./${srcDir}/* ${pc.dim("(tsconfig.json is left alone — SvelteKit generates that half)")}`,
       `leave ${pc.cyan(`${srcDir}/lib/`)} and ${pc.cyan(kitMajor === 3 ? "#lib" : "$lib")} exactly as they are — ${pc.dim("this CLI moves none of your code; shared/ is where the layers' shared code goes")}`,
       movesStylesheet
@@ -269,6 +280,9 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   }
   if (subpath && patchPackageImports(projectDir, imports) === "patched") {
     written.push(`package.json (imports: ${alias}/*)`);
+  }
+  if (subpath && patchTsconfigPaths(projectDir, tsconfigPaths) === "patched") {
+    written.push(`tsconfig.json (paths: ${alias}/*)`);
   }
 
   const context = skillContext;
@@ -374,6 +388,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
     alias,
     packageManager,
     features: detectFeatures(projectDir, srcDir),
+    http: defaultHttpContract(),
     scaffoldVersion: cliVersion(),
   };
   writeConfig(projectDir, config);
@@ -388,6 +403,7 @@ export async function initProject(projectDir: string, opts: InitOptions): Promis
   // lines nobody typed. Best-effort, so a project with no prettier is unaffected.
   await formatFiles(projectDir, [
     kitConfig.file,
+    ...(subpath ? ["tsconfig.json"] : []),
     "package.json",
     "eslint.config.js",
     "components.json",

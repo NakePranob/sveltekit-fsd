@@ -110,7 +110,7 @@ sveltekit-fsd generate page <name...> [--title <t>] [--route <path>] [--no-route
 sveltekit-fsd generate slice <features|entities|widgets> <name...> [-s <segments...>] [-r <root>] [--errors]
 sveltekit-fsd generate layout <name> [--route <path>] [--no-route] [--guard]
 
-sveltekit-fsd add error-handling [-y] [--no-install]
+sveltekit-fsd add error-handling [-y] [--no-install] [--http-contract <file>]
 sveltekit-fsd add auth [-y] [--no-install]
 sveltekit-fsd add prettier [-y] [--no-install]
 
@@ -261,6 +261,19 @@ The API base URL is `PUBLIC_API_URL`, read when the app starts. On SvelteKit 3
 it is declared in `src/env.ts` — created, or added to the `defineEnvVars({ ... })`
 you already have — and read from `$app/env/public`; on 2 it comes from
 `$env/dynamic/public`.
+
+`--http-contract <file>` reads the `http-contract.json` that `go-scaffold`
+writes into a Go API project and generates `shared/api/contract.ts` from it:
+`parseSingle`, `parsePage`, and `parseErrorBody` unwrap whichever single, list,
+and error shapes the API actually uses. Feature code keeps working with
+`ApiError` and `Page<T>`, so a preset other than `default` does not leak into
+every slice. The preset is recorded in `sveltekit-fsd.config.json`. A contract
+whose `presetHash` does not match its shapes is refused — that artifact is
+stale, and generating parsers from it would read the wrong fields.
+
+Without the flag, `add error-handling` assumes the default Go shapes: a bare
+single object, `{ data, limit, offset, total }` for lists, and
+`{ error: { code, message } }` for failures.
 
 Two rules in there fail silently in a browser rather than loudly, which is why
 they get the only generated test —

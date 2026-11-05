@@ -6,6 +6,29 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added: read the Go API's response contract
+
+`add error-handling --http-contract <file>` reads the `http-contract.json`
+exported by `go-scaffold` and generates `shared/api/contract.ts`, whose
+`parseSingle`/`parsePage`/`parseErrorBody` unwrap whichever single, list, and
+error shapes the API uses. The client exposes contract-aware
+`getSingle`/`getPage`/`postSingle`/`putSingle`/`patchSingle`/`remove` helpers,
+and generated slices use them, so feature code keeps the normalised `Page<T>`
+and `ApiError` shapes across every preset. A contract whose `presetHash` does
+not match its shapes is refused.
+
+## 0.4.3
+
+### Fixed: Steiger resolves `#/` imports on SvelteKit 3
+
+`init` now writes the `#/*` alias into `tsconfig.json` `compilerOptions.paths`
+as well as `package.json#imports`. Steiger resolves imports through tsconfig,
+so the whole-tree check now catches a wrong-direction `#/` import instead of
+silently skipping it as unresolved.
+
+`init` refuses to overwrite a conflicting `#/*` mapping or a tsconfig it cannot
+parse, and formats the tsconfig it patches.
+
 ## 0.4.2
 
 ### Fixed: README architecture diagram

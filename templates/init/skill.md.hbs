@@ -43,7 +43,7 @@ sveltekit-fsd init [--locale th|en] [--no-install] [--no-hooks]
 sveltekit-fsd generate page <name...> [--route <path>] [--no-route] [--auth] [--api] [--errors] [-r <root>] [--defaults]
 sveltekit-fsd generate slice <features|entities|widgets> <name...> [-s <segments...>] [-r <root>] [--errors] [--defaults]
 sveltekit-fsd generate layout <name> [--route <path>] [--no-route] [--guard] [--defaults]
-sveltekit-fsd add error-handling [-y] [--no-install]
+sveltekit-fsd add error-handling [-y] [--no-install] [--http-contract <file>]
 sveltekit-fsd add auth [-y] [--no-install]
 sveltekit-fsd add prettier [-y] [--no-install]
 sveltekit-fsd config show
@@ -54,6 +54,9 @@ Feature gates are deliberate:
 - `--auth` and `--guard` require `features.auth`; run `add auth` first.
 - `--errors`, `--api`, and the `api` segment require `features.errorHandling`;
   run `add error-handling` first.
+- Pass `--http-contract` the `http-contract.json` that `go-scaffold` writes when
+  the API uses a non-default preset. Without it the generated parsers assume the
+  default bare/data-limit-offset-total/error-object shapes.
 - `add auth` installs error handling itself when it is missing.
 - `add prettier` formats the whole package once on purpose; commit that pass
   separately.

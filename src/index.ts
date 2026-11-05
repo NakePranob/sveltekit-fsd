@@ -223,9 +223,10 @@ add
   )
   .option("--no-install", "write the files but do not run the package manager")
   .option("-y, --yes", "skip the confirmation summary")
-  .action(async (opts: { install?: boolean; yes?: boolean }) => {
+  .option("--http-contract <file>", "http-contract.json exported by the Go API; generates matching response parsers")
+  .action(async (opts: { install?: boolean; yes?: boolean; httpContract?: string }) => {
     try {
-      await addErrorHandling({ install: opts.install, yes: opts.yes });
+      await addErrorHandling({ install: opts.install, yes: opts.yes, httpContract: opts.httpContract });
     } catch (err) {
       fail(err);
     }

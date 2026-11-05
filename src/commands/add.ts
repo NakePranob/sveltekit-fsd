@@ -4,7 +4,8 @@ import pc from "picocolors";
 
 import { ProjectConfig } from "../types";
 import { confirm } from "../prompts";
-import { readConfig, requireProjectDir, setFeature } from "../utils/config";
+import { readConfig, requireProjectDir, setFeature, writeConfig } from "../utils/config";
+import { contractConfig, readHttpContract } from "../utils/http-contract";
 import { asCatalogEntries, copyFor } from "../utils/copy";
 import { applyTemplates, formatFiles, TemplateEntry } from "../utils/render";
 import {
@@ -58,6 +59,7 @@ const API_URL_ENV_DECLARATION = [
 export interface AddOptions {
   install?: boolean;
   yes?: boolean;
+  httpContract?: string;
 }
 
 // confirmAdd prints what an add is about to do and asks before it happens: it
@@ -100,13 +102,19 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
       `error handling is already installed (${config.srcDir}/shared/api/client.ts exists) — edit the catalogs there, or delete the directory to reinstall`
     );
   }
+  // The Go API's exported contract decides how responses are unwrapped. Read
+  // once, here, and hold it for the whole run: the templates and the config
+  // both read the same object, so the stored preset cannot disagree with the
+  // parsers that were just generated.
+  const http = opts.httpContract ? contractConfig(readHttpContract(opts.httpContract)) : config.http;
+  const effectiveConfig = { ...config, http };
 
   const providersFile = `${config.srcDir}/app/providers/providers.svelte`;
   const ownsProviders = !fs.existsSync(path.join(projectDir, providersFile));
   const layoutFile = rootLayoutPath(config.routesDir);
   // Asked here, not at init: the project may have moved to SvelteKit 3 since,
   // and the env module is the one file whose API differs between the two.
-  const baseContext = errorContext(projectDir, config);
+  const baseContext = errorContext(projectDir, effectiveConfig);
   const ownsKitEnv = baseContext.kit3 && !fs.existsSync(path.join(projectDir, KIT_ENV_FILE));
 
   await confirmAdd(
@@ -131,6 +139,7 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
 
   const context = { ...baseContext, testRunner: runner, envDeclaration: API_URL_ENV_DECLARATION };
   const entries: TemplateEntry[] = [
+    { template: "add/errors/contract.ts.hbs", output: `${config.srcDir}/shared/api/contract.ts` },
     { template: "add/errors/api-error.ts.hbs", output: `${config.srcDir}/shared/api/api-error.ts` },
     { template: "add/errors/error-catalog.ts.hbs", output: `${config.srcDir}/shared/api/error-catalog.ts` },
     { template: "add/errors/error-resolver.ts.hbs", output: `${config.srcDir}/shared/api/error-resolver.ts` },
@@ -224,6 +233,12 @@ export async function addErrorHandling(opts: AddOptions): Promise<string[]> {
 
   const added = addDependencies(projectDir, API_DEPS);
   setFeature(projectDir, "errorHandling", true);
+  if (opts.httpContract) {
+    // Only when a contract file was passed: `setFeature` rewrote the config
+    // from disk a moment ago, so this must re-read it rather than reuse the
+    // object from before that write.
+    writeConfig(projectDir, { ...readConfig(projectDir), http });
+  }
   report(written, added);
 
   if (!ownsProviders) {
