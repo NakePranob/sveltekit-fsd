@@ -169,7 +169,7 @@ src/
 | `generate slice [layer] [name]` | Add a `features` or `entities` slice. |
 | `generate layout [name]` | Add shared chrome for a route group. |
 | `add auth` | Add password login, session handling, and a login page. |
-| `add error-handling` | Add the API error boundary and error catalogs. |
+| `add error-handling` | Add the API error boundary and error catalogs, with response parsers matching the Go API's contract. |
 | `add prettier` | Add formatting with Tailwind class sorting. |
 | `config` | Inspect and change project settings. |
 
