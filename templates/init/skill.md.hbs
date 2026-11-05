@@ -43,7 +43,7 @@ sveltekit-fsd init [--locale th|en] [--no-install] [--no-hooks]
 sveltekit-fsd generate page <name...> [--route <path>] [--no-route] [--auth] [--api] [--errors] [-r <root>] [--defaults]
 sveltekit-fsd generate slice <features|entities|widgets> <name...> [-s <segments...>] [-r <root>] [--errors] [--defaults]
 sveltekit-fsd generate layout <name> [--route <path>] [--no-route] [--guard] [--defaults]
-sveltekit-fsd add error-handling [-y] [--no-install]
+sveltekit-fsd add error-handling [-y] [--no-install] [--http-contract <file>]
 sveltekit-fsd add auth [-y] [--no-install]
 sveltekit-fsd add prettier [-y] [--no-install]
 sveltekit-fsd config show
@@ -54,9 +54,48 @@ Feature gates are deliberate:
 - `--auth` and `--guard` require `features.auth`; run `add auth` first.
 - `--errors`, `--api`, and the `api` segment require `features.errorHandling`;
   run `add error-handling` first.
+- Pass `--http-contract` the `http-contract.json` that `go-scaffold` writes when
+  the API uses a non-default preset. Without it the generated parsers assume the
+  default bare/data-limit-offset-total/error-object shapes.
 - `add auth` installs error handling itself when it is missing.
 - `add prettier` formats the whole package once on purpose; commit that pass
   separately.
+
+## Agent interface
+
+For a script or an agent, use the JSON commands instead of assembling flags by
+hand. Neither `interview` nor `plan` writes anything:
+
+~~~bash
+sveltekit-fsd interview                              # questions + defaults as JSON
+sveltekit-fsd plan --answers answers.json            # ordered steps, writes nothing
+sveltekit-fsd apply --answers answers.json           # runs the plan, stops at the first failure
+sveltekit-fsd check                                  # config, feature flags, contract as JSON
+sveltekit-fsd mcp --root .                           # stdio MCP server for the same four operations
+~~~
+
+The answers file is the one decision surface:
+
+~~~json
+{
+  "locale": "en",
+  "install": false,
+  "hooks": false,
+  "httpContract": "../api/http-contract.json",
+  "add": ["error-handling", "auth"],
+  "generate": [
+    { "kind": "page", "name": "dashboard", "title": "Dashboard" },
+    { "kind": "slice", "layer": "features", "name": "checkout", "segments": ["ui", "api"] }
+  ]
+}
+~~~
+
+`plan` resolves feature gates (for example `add auth` implies error handling),
+lists the exact CLI commands, and records the contract preset it read. `apply`
+runs those same commands — it does not have a second generator — and replaying
+it skips steps that are already complete. `httpContract` only applies to
+`add error-handling`; if that is already installed, remove `shared/api` before
+reinstalling with a different contract.
 
 ## Extend, do not rewrite
 
