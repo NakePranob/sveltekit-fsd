@@ -6,6 +6,16 @@ project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added: an agent interface
+
+`interview` prints the scaffold decisions as JSON; `plan --answers` validates
+one answers file and prints the ordered commands without writing anything;
+`apply --answers` runs those commands and stops at the first real failure;
+`check` verifies config, feature flags, and the HTTP contract; and `mcp --root`
+serves the same operations over stdio MCP. The commands route to the existing
+generators, so there is no second implementation of scaffolding rules, and
+replaying an apply skips steps that are already complete.
+
 ### Added: read the Go API's response contract
 
 `add error-handling --http-contract <file>` reads the `http-contract.json`

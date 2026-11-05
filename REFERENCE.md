@@ -114,7 +114,13 @@ sveltekit-fsd add error-handling [-y] [--no-install] [--http-contract <file>]
 sveltekit-fsd add auth [-y] [--no-install]
 sveltekit-fsd add prettier [-y] [--no-install]
 
-sveltekit-fsd config show
+sveltekit-fsd interview
+sveltekit-fsd plan --answers <file>
+sveltekit-fsd apply --answers <file>
+sveltekit-fsd check
+sveltekit-fsd mcp [--root <dir>]
+
+sveltekit-fsd config show [--json]
 sveltekit-fsd config set locale th|en
 ```
 
@@ -130,6 +136,55 @@ missing values open prompts in an interactive terminal.
 Prompts also disappear when they cannot apply: `--auth` is refused until `add
 auth` has run, and the error-catalog question is not asked at all without `add
 error-handling`.
+
+### Agent interface
+
+An agent should not build flags by hand or scrape human output. Five commands
+provide the same operations as JSON:
+
+```bash
+sveltekit-fsd interview                    # questions, options, and defaults; writes nothing
+sveltekit-fsd plan --answers answers.json  # validated steps; writes nothing
+sveltekit-fsd apply --answers answers.json # runs the steps in order
+sveltekit-fsd check                        # config, feature flags, contract, guidance
+sveltekit-fsd mcp --root .                 # the same operations over stdio MCP
+```
+
+`plan` and `apply` read one answers file:
+
+```json
+{
+  "locale": "en",
+  "install": false,
+  "hooks": false,
+  "httpContract": "../api/http-contract.json",
+  "add": ["error-handling", "auth"],
+  "generate": [
+    { "kind": "page", "name": "dashboard", "title": "Dashboard" },
+    { "kind": "slice", "layer": "features", "name": "checkout", "segments": ["ui", "api"] }
+  ]
+}
+```
+
+`init` defaults to true and is skipped when `sveltekit-fsd.config.json` already
+exists. `add` accepts `error-handling`, `auth`, and `prettier`; dependencies are
+resolved in the plan (`auth` implies `error-handling`, and a contract needs the
+error-handling install). `generate` accepts `page`, `slice`, and `layout` with
+the same options as their flags. `httpContract` is resolved from the project
+root.
+
+`plan` prints `writes: false` plus ordered `{ id, command }` steps and any
+warnings. `apply` spawns those exact commands rather than generating files
+itself; it stops at the first real failure and marks a step `skipped` when the
+CLI reports there was nothing left to write. Replaying the same answers is
+therefore safe. `check` exits 1 when a feature flag points at missing files or
+the config cannot be read, and only warns about convenience gaps such as a
+missing steiger config.
+
+`mcp` serves five tools — `sveltekit_fsd_interview`, `sveltekit_fsd_plan`,
+`sveltekit_fsd_apply`, `sveltekit_fsd_check`, and
+`sveltekit_fsd_config_show` — and keeps `--root` inside the directory it was
+launched from.
 
 ### `init`
 
